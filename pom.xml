@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.smallrye.ffm</groupId>
+    <artifactId>smallrye-ffm-parent</artifactId>
+    <version>1.0-SNAPSHOT</version>
+
+    <properties>
+        <jdk.min.version>25</jdk.min.version>
+
+        <maven.compiler.source>25</maven.compiler.source>
+        <maven.compiler.target>25</maven.compiler.target>
+        <maven.compiler.release>25</maven.compiler.release>
+
+        <version.smallrye-common>2.15.0-SNAPSHOT</version.smallrye-common>
+        <version.jdk-classfile-backport>26</version.jdk-classfile-backport>
+
+        <version.org.apache.maven.maven-plugin>2.2.1</version.org.apache.maven.maven-plugin>
+        <version.org.apache.maven.maven-settings>3.9.11</version.org.apache.maven.maven-settings>
+        <version.org.apache.maven.plugin-api>3.9.11</version.org.apache.maven.plugin-api>
+        <version.org.apache.maven.plugin-tools>3.15.1</version.org.apache.maven.plugin-tools>
+        <version.org.apache.maven.plugins.site-plugin>3.21.0</version.org.apache.maven.plugins.site-plugin>
+        <version.org.apache.maven.plugins.maven-dependency-plugin>2.6</version.org.apache.maven.plugins.maven-dependency-plugin>
+        <version.org.apache.maven.shared.maven-filtering>3.4.0</version.org.apache.maven.shared.maven-filtering>
+        <version.org.codehaus.plexus.plexus-utils>3.5.1</version.org.codehaus.plexus.plexus-utils>
+    </properties>
+
+    <parent>
+        <groupId>io.smallrye</groupId>
+        <artifactId>smallrye-build-parent</artifactId>
+        <version>47</version>
+    </parent>
+
+    <packaging>pom</packaging>
+
+    <name>SmallRye FFM - Parent</name>
+    <description>A utility to simplify usage of the Java FFM API</description>
+    <url>https://github.com/smallrye/smallrye-ffm</url>
+
+    <scm>
+        <url>https://github.com/smallrye/smallrye-ffm</url>
+        <connection>scm:git:git@github.com:smallrye/smallrye-ffm</connection>
+        <developerConnection>scm:git:git@github.com:smallrye/smallrye-ffm</developerConnection>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/smallrye/smallrye-ffm/issues</url>
+    </issueManagement>
+
+    <licenses>
+        <license>
+            <name>The Apache Software License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <modules>
+        <module>maven-plugin</module>
+        <module>api</module>
+    </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- Internal -->
+            <dependency>
+                <groupId>${project.groupId}</groupId>
+                <artifactId>smallrye-ffm</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!-- External -->
+            <dependency>
+                <groupId>io.smallrye.common</groupId>
+                <artifactId>smallrye-common-bom</artifactId>
+                <version>${version.smallrye-common}</version>
+                <scope>import</scope>
+                <type>pom</type>
+            </dependency>
+            <dependency>
+                <groupId>io.smallrye.classfile</groupId>
+                <artifactId>jdk-classfile-backport</artifactId>
+                <version>${version.jdk-classfile-backport}</version>
+            </dependency>
+            <!-- Maven -->
+            <dependency>
+                <groupId>org.sonatype.sisu</groupId>
+                <artifactId>sisu-inject-bean</artifactId>
+                <version>2.6.0</version>
+                <scope>provided</scope>
+            </dependency>
+            <!-- maven plugin dependencies -->
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-plugin-api</artifactId>
+                <version>${version.org.apache.maven.plugin-api}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-project</artifactId>
+                <version>${version.org.apache.maven.maven-plugin}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven.shared</groupId>
+                <artifactId>maven-filtering</artifactId>
+                <version>${version.org.apache.maven.shared.maven-filtering}</version>
+                <scope>provided</scope>
+            </dependency>
+            <!-- dependencies to annotations -->
+            <dependency>
+                <groupId>org.apache.maven.plugin-tools</groupId>
+                <artifactId>maven-plugin-annotations</artifactId>
+                <version>${version.org.apache.maven.plugin-tools}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven.plugin-tools</groupId>
+                <artifactId>maven-plugin-tools-annotations</artifactId>
+                <version>${version.org.apache.maven.plugin-tools}</version>
+                <scope>provided</scope>
+            </dependency>
+            <!-- generated help mojo has a dependency to plexus-utils -->
+            <dependency>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-utils</artifactId>
+                <version>${version.org.codehaus.plexus.plexus-utils}</version>
+                <scope>provided</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-settings</artifactId>
+                <version>${version.org.apache.maven.maven-settings}</version>
+                <scope>provided</scope>
+            </dependency>
+            <!-- Testing -->
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-engine</artifactId>
+                <version>6.0.1</version>
+                <scope>test</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>${project.groupId}</groupId>
+                    <artifactId>smallrye-ffm-maven-plugin</artifactId>
+                    <version>${project.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-plugin-plugin</artifactId>
+                    <version>${version.org.apache.maven.plugin-tools}</version>
+                    <configuration>
+                        <skipErrorNoDescriptorsFound>true</skipErrorNoDescriptorsFound>
+                        <extractors>
+                            <extractor>java-annotations</extractor>
+                        </extractors>
+                        <goalPrefix>ffm</goalPrefix>
+                    </configuration>
+                    <dependencies>
+                        <dependency>
+                            <groupId>org.apache.maven.plugin-tools</groupId>
+                            <artifactId>maven-plugin-tools-annotations</artifactId>
+                            <version>${version.org.apache.maven.plugin-tools}</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+                <plugin>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <dependencies>
+                        <!-- If ASM isn't up to date, surefire can't read our module descriptors -->
+                        <dependency>
+                            <groupId>org.ow2.asm</groupId>
+                            <artifactId>asm</artifactId>
+                            <version>9.9.1</version>
+                        </dependency>
+                    </dependencies>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>net.revelc.code</groupId>
+                <artifactId>impsort-maven-plugin</artifactId>
+                <version>1.12.0</version>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.github.javaparser</groupId>
+                        <artifactId>javaparser-core</artifactId>
+                        <version>3.27.0</version>
+                    </dependency>
+                </dependencies>
+                <executions>
+                    <execution>
+                        <id>sort-imports</id>
+                        <goals>
+                            <goal>sort</goal>
+                        </goals>
+                        <configuration>
+                            <compliance>21</compliance>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>net.revelc.code.formatter</groupId>
+                <artifactId>formatter-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>format-sources</id>
+                        <phase>process-sources</phase>
+                        <goals>
+                            <goal>format</goal>
+                        </goals>
+                        <configuration>
+                            <compilerCompliance>21</compilerCompliance>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <configuration>
+                    <source>22</source>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
