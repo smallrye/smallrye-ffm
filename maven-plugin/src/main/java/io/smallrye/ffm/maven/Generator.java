@@ -639,7 +639,7 @@ public final class Generator {
             case "stdc_unsigned_int" -> "ui";
             case "stdc_long" -> "sl";
             case "stdc_unsigned_long" -> "ul";
-            case "stdc_long_long", "s64" -> "sJ";
+            case "stdc_long_long", "s64", "off_t" -> "sJ";
             case "stdc_unsigned_long_long", "u64" -> "uJ";
             case "stdc_bool" -> "Z";
             case "stdc_wchar_t" -> "w";
@@ -651,8 +651,8 @@ public final class Generator {
             case "u32" -> "uI";
             case "f32" -> "F";
             case "f64" -> "D";
-            case "intptr" -> "s*";
-            case "uintptr" -> "u*";
+            case "intptr", "ssize_t" -> "s*";
+            case "uintptr", "size_t" -> "u*";
             case "ptr" -> "*";
             default -> throw new IllegalStateException();
         };

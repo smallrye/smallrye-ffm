@@ -127,13 +127,27 @@ public enum AsType {
     f64,
 
     /**
-     * A pointer-sized signed integer. Usable for {@code ptrdiff_t} or {@code ssize_t} typed arguments.
+     * A pointer-sized signed integer. Usable for {@code ptrdiff_t} or {@code intptr_t} typed arguments.
      */
     intptr(Signedness.signed),
     /**
-     * A pointer-sized unsigned integer. Usable for {@code uintptr_t} or {@code size_t} typed arguments.
+     * A pointer-sized unsigned integer. Usable for {@code uintptr_t} typed arguments.
      */
     uintptr(Signedness.unsigned),
+
+    /**
+     * A signed memory size. Usable for {@code ssize_t} typed arguments.
+     */
+    ssize_t(Signedness.signed),
+    /**
+     * An unsigned memory size. Usable for {@code size_t} typed arguments.
+     */
+    size_t(Signedness.unsigned),
+
+    /**
+     * A POSIX file offset.
+     */
+    off_t(Signedness.signed),
 
     /**
      * A pointer.
