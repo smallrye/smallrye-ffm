@@ -238,6 +238,7 @@ public final class Bootstraps {
         return new ConstantCallSite(mh);
     }
 
+    /* @formatter:off */
     /**
      * Invoke-dynamic bootstrap which invokes a downcall method handle.
      * The returned method handle accepts the symbol address as a {@link MemorySegment},
@@ -284,6 +285,7 @@ public final class Bootstraps {
      * @param type the method type corresponding to the downcall handle, provided by the JVM (must not be {@code null})
      * @return a call site which invokes the downcall (not {@code null})
      */
+    /* @formatter:on */
     public static CallSite downcall(MethodHandles.Lookup lookup, String descStr, MethodType type) {
         MethodHandle handle;
         // the descriptors for downcall handles are indy-hostile, so map them more nicely

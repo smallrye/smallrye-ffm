@@ -8,14 +8,12 @@ import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import io.smallrye.common.io.Files2;
-import io.smallrye.common.os.Process;
-import io.smallrye.common.process.ProcessUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import io.smallrye.common.os.OS;
 import io.smallrye.common.process.ProcessBuilder;
+import io.smallrye.common.process.ProcessUtil;
 import io.smallrye.ffm.Errno;
 import io.smallrye.ffm.ErrnoConsumer;
 import io.smallrye.ffm.Link;
