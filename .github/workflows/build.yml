@@ -1,0 +1,79 @@
+name: SmallRye Build
+env:
+  MAVEN_VERSION: 3.9.12
+  IO_TAKARI_MAVEN_WRAPPER_VERSION: 0.7.7
+
+on:
+  push:
+    branches:
+      - main
+      - jakarta
+    paths-ignore:
+      - '.gitattributes'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'README*'
+  pull_request:
+    paths-ignore:
+      - '.gitattributes'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'README*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    name: build
+
+    steps:
+      - uses: actions/checkout@v6
+        name: checkout
+
+      - uses: actions/setup-java@v5
+        name: set up JDKs
+        with:
+          distribution: temurin
+          java-version: |
+            25
+          cache: 'maven'
+          cache-dependency-path: '**/pom.xml'
+
+      - name: build with maven
+        run: |
+          mvn -q -N "io.takari:maven:${{env.IO_TAKARI_MAVEN_WRAPPER_VERSION}}:wrapper" "-Dmaven=${{env.MAVEN_VERSION}}"
+          ./mvnw -B -ntp formatter:validate verify javadoc:javadoc --file pom.xml "-Djava25.home=${{env.JAVA_HOME_25_X64}}${{env.JAVA_HOME_25_ARM64}}"
+
+  quality:
+    needs: [ build ]
+    if: github.event_name == 'push' && github.repository_owner == 'smallrye'
+    runs-on: ubuntu-latest
+    name: quality
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: 'maven'
+          cache-dependency-path: '**/pom.xml'
+
+      - name: build with coverage
+        run: |
+          mvn -q -N "io.takari:maven:${{env.IO_TAKARI_MAVEN_WRAPPER_VERSION}}:wrapper" "-Dmaven=${{env.MAVEN_VERSION}}"
+          ./mvnw -B -ntp verify -Pcoverage
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: 25
+
+      - name: sonar
+        run: ./mvnw -B -ntp sonar:sonar -Dsonar.projectKey=smallrye_smallrye-ffm -Dsonar.token=${{secrets.SONAR_TOKEN}}

@@ -1,0 +1,5 @@
+name: SmallRye FFM
+# for this project, always set next-version to the next *minor* unless it's on a stable branch!
+release:
+  current-version: 0.1-SNAPSHOT
+  next-version: 1.0-SNAPSHOT

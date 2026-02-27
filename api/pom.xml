@@ -7,7 +7,7 @@
     <parent>
         <groupId>io.smallrye.ffm</groupId>
         <artifactId>smallrye-ffm-parent</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>0.1-SNAPSHOT</version>
     </parent>
 
     <artifactId>smallrye-ffm</artifactId>
