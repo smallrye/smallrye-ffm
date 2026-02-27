@@ -249,7 +249,7 @@ public final class Bootstraps {
      * in order to guarantee that no so-called "garbage bits" are sent in to the native method.
      * <p>
      * The descriptor string is structured as follows:
-     * <code><pre>
+     * <pre><code>
     descriptor := flag* '(' type* ')' retType
 
     flag := 'e' | 'E' | 'W' | 'r' | 'R'
@@ -259,7 +259,7 @@ public final class Bootstraps {
     retType := type | 'V'
 
     intType := 'B' | 'S' | 'I' | 'J' | 'c' | 's' | 'i' | 'l'
-     * </pre></code>
+     * </code></pre>
      * The following flags are recognized:
      * <ul>
      * <li>{@code e} - indicate that {@code errno} shall be captured</li>
@@ -276,8 +276,8 @@ public final class Bootstraps {
      * <li>{@code uI} - unsigned int (four bytes)</li>
      * <li>{@code uJ} - unsigned long (eight bytes)</li>
      * <li>{@code u*} - unsigned pointer-sized integer (four or eight bytes)</li>
-     * // TODO complete
      * </ul>
+     * <!-- TODO complete -->
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
      * @param descStr the native descriptor string (must not be {@code null})
