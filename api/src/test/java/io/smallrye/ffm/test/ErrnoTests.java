@@ -32,7 +32,8 @@ public final class ErrnoTests {
         for (Errno errno : Errno.values()) {
             if (errno.isPresent()) {
                 if (errno == Errno.EWOULDBLOCK && Errno.EWOULDBLOCK.nativeValue() == Errno.EAGAIN.nativeValue()
-                        || errno == Errno.EOPNOTSUPP && Errno.ENOTSUP.nativeValue() == Errno.EOPNOTSUPP.nativeValue()) {
+                        || errno == Errno.EOPNOTSUPP && Errno.ENOTSUP.nativeValue() == Errno.EOPNOTSUPP.nativeValue()
+                        || errno == Errno.EDEADLK && Errno.EDEADLOCK.nativeValue() == Errno.EDEADLK.nativeValue()) {
                     // some platforms have the same native value for these two constants
                     continue;
                 }

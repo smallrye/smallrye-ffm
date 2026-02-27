@@ -10,11 +10,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
 
+import io.smallrye.common.cpu.CPU;
 import io.smallrye.common.os.OS;
 
 /**
  * Errno values.
  */
+// TODO: MIPS Linux has a whole separate set of errno values!
 @SuppressWarnings("SpellCheckingInspection")
 public enum Errno implements NativeIntValued {
     /**
@@ -56,7 +58,10 @@ public enum Errno implements NativeIntValued {
     ECONNREFUSED(79, 146, 61, 111, 107, 1128),
     ECONNRESET(73, 131, 54, 104, 108, 1121),
     EDEADLK(45, 45, 11, 35, 36, 116),
-    EDEADLOCK(OS.LINUX, 35),
+    EDEADLOCK(45, 45, 11, switch (CPU.host()) {
+        case ppc, ppc32 -> 58;
+        default -> 35;
+    }, 36, 116),
     EDESTADDRREQ(58, 96, 39, 89, 109, 1106),
     EDEVERR(OS.MAC, 83),
     EDOM(OS.Z, 1, 33),
