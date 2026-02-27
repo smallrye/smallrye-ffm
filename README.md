@@ -104,7 +104,8 @@ Some of the more frequently useful types are:
 * `stdc_unsigned_int` - the C `unsigned int` type
 * `f32` - a 32-bit float type (usable for the C type `float`)
 * `f64` - a 64-bit float type (usable for the C type `double`)
-* `uintptr` - an unsigned pointer-sized integer (usable for the standard C type `size_t` among other things)
+* `intptr` and `uintptr` - signed and unsigned pointer-sized integer (usable for the standard C types `intptr_t` and `uintptr_t`)
+* `size_t` and `ssize_t` - unsigned and signed integers frequently used in standard C and POSIX functions
 * `ptr` - a pointer value (use this in conjunction with `MemorySegment`, `String`, or primitive arrays)
 
 By default, this is the mapping of Java types to `AsType` constants:
