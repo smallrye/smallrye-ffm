@@ -4,9 +4,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.*;
 
 import java.lang.foreign.MemorySegment;
+import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.smallrye.common.io.Files2;
+import io.smallrye.common.os.Process;
+import io.smallrye.common.process.ProcessUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -75,8 +79,7 @@ public final class ErrnoTests {
 
     @Test
     public void matchErrnoValues() {
-        // TODO: other OSes
-        assumeTrue(OS.current() == OS.LINUX || OS.current() == OS.MAC);
+        assumeTrue(ProcessUtil.pathOfCommand(Path.of("errno")).isPresent(), "No `errno` command found");
         Pattern p = Pattern.compile("([^A-Z0-9_]+) (\\d+) (.*)");
         ProcessBuilder.newBuilder("errno").arguments("-l").output().consumeLinesWith(1000, line -> {
             Matcher m = p.matcher(line);
