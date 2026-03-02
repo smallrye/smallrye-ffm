@@ -17,6 +17,12 @@ public final class TestTransformMojo extends AbstractTransformMojo {
     @Parameter(defaultValue = "${project.build.testOutputDirectory}", required = true, property = "smallrye-ffm.testClassesDirectory")
     private File classesDirectory;
 
+    /**
+     * Construct a new instance.
+     */
+    public TestTransformMojo() {
+    }
+
     File classesDirectory() {
         return classesDirectory;
     }

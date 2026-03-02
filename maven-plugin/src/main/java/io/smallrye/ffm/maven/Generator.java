@@ -47,8 +47,20 @@ import io.smallrye.classfile.extras.reflect.AccessFlag;
 import io.smallrye.classfile.instruction.ConstantInstruction;
 import io.smallrye.classfile.instruction.InvokeInstruction;
 
+/**
+ * The actual SmallRye FFM code generator.
+ */
 public final class Generator {
+    private Generator() {
+    }
 
+    /**
+     * Process a single element.
+     *
+     * @param zb the class builder (must not be {@code null})
+     * @param ce the class element (must not be {@code null})
+     * @return {@code true} if the class was transformed, or {@code false} if it was not
+     */
     public static boolean processElement(final ClassBuilder zb, final ClassElement ce) {
         if (ce instanceof MethodModel mm
                 && (processMethodForConstants(mm, zb) || processNativeMethod(mm, zb))) {
@@ -59,7 +71,7 @@ public final class Generator {
         }
     }
 
-    public static boolean processMethodForConstants(MethodModel mm, ClassBuilder zb) {
+    private static boolean processMethodForConstants(MethodModel mm, ClassBuilder zb) {
         if (mm.code().isEmpty()) {
             return false;
         }
@@ -121,7 +133,7 @@ public final class Generator {
         return found;
     }
 
-    public static boolean processNativeMethod(MethodModel mm, ClassBuilder zb) {
+    private static boolean processNativeMethod(MethodModel mm, ClassBuilder zb) {
         // gather the method-level annotations
         Optional<RuntimeInvisibleAnnotationsAttribute> ria = mm.findAttribute(Attributes.runtimeInvisibleAnnotations());
         int variadic = -1;

@@ -1,5 +1,10 @@
 import io.smallrye.common.annotation.NativeAccess;
 
+/**
+ * SmallRye FFM
+ * <p>
+ * A utility to simplify usage of the Java FFM API.
+ */
 @NativeAccess
 module io.smallrye.ffm {
     requires static io.smallrye.common.annotation;

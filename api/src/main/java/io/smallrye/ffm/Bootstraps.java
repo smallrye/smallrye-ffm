@@ -41,6 +41,17 @@ public final class Bootstraps {
 
     private static final Linker.Option[] NO_OPTIONS = new Linker.Option[0];
 
+    /**
+     * A constant bootstrap for dynamic constants which resolves to a {@link VarHandle}
+     * corresponding to the named call state variable.
+     * The {@code VarHandle} will accept the call state buffer {@link MemorySegment}
+     * and a {@code long} offset (typically just set to {@code 0L}).
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the call state buffer group member name (e.g. {@code "errno"}) (must not be {@code null})
+     * @param type the type {@code VarHandle.class} (must not be {@code null})
+     * @return the {@code VarHandle} for the call state handle (not {@code null})
+     */
     public static VarHandle callStateHandle(MethodHandles.Lookup lookup, String name, Class<VarHandle> type) {
         if (type != VarHandle.class) {
             throw wrongType();
@@ -49,6 +60,16 @@ public final class Bootstraps {
                 .withInvokeExactBehavior();
     }
 
+    /**
+     * A constant bootstrap for a character set.
+     * The set of possible exceptions is the same as what may be thrown by {@code Charset#forName(String)}.
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the character set name (must not be {@code null})
+     * @param type the type {@code Charset.class} (must not be {@code null})
+     * @return the character set corresponding to the given name (not {@code null})
+     * @see Charset#forName(String)
+     */
     public static Charset charset(MethodHandles.Lookup lookup, String name, Class<Charset> type) {
         if (type != Charset.class) {
             throw wrongType();
@@ -57,6 +78,16 @@ public final class Bootstraps {
         return Charset.forName(name);
     }
 
+    /**
+     * A constant bootstrap which produces a padding layout (with an optional name).
+     * If the name is omitted or is equal to {@code _}, then the padding layout will not be named.
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the layout name
+     * @param type the type {@code PaddingLayout.class} (must not be {@code null})
+     * @param size the size of the padding layout (1 or greater)
+     * @return the padding layout (not {@code null})
+     */
     public static PaddingLayout paddingLayout(MethodHandles.Lookup lookup, String name, Class<PaddingLayout> type, long size) {
         if (type != PaddingLayout.class) {
             throw wrongType();
@@ -68,6 +99,17 @@ public final class Bootstraps {
         return base;
     }
 
+    /**
+     * A constant bootstrap which produces a sequence layout (with an optional name).
+     * If the name is omitted or is equal to {@code _}, then the sequence layout will not be named.
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the layout name
+     * @param type the type {@code SequenceLayout.class} (must not be {@code null})
+     * @param count the number of elements in the layout (1 or greater)
+     * @param element the layout type for the sequence's elements (must not be {@code null})
+     * @return the sequence layout (not {@code null})
+     */
     public static SequenceLayout sequenceLayout(MethodHandles.Lookup lookup, String name, Class<SequenceLayout> type,
             long count, MemoryLayout element) {
         if (type != SequenceLayout.class) {
@@ -80,6 +122,16 @@ public final class Bootstraps {
         return base;
     }
 
+    /**
+     * A constant bootstrap which produces a structure layout (with an optional name).
+     * If the name is omitted or is equal to {@code _}, then the structure layout will not be named.
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the layout name
+     * @param type the type {@code StructLayout.class} (must not be {@code null})
+     * @param elements the elements of the structure (must not be {@code null})
+     * @return the structure layout (not {@code null})
+     */
     public static StructLayout structLayout(MethodHandles.Lookup lookup, String name, Class<StructLayout> type,
             MemoryLayout... elements) {
         if (type != StructLayout.class) {
@@ -92,6 +144,16 @@ public final class Bootstraps {
         return base;
     }
 
+    /**
+     * A constant bootstrap which produces a union layout (with an optional name).
+     * If the name is omitted or is equal to {@code _}, then the union layout will not be named.
+     *
+     * @param lookup the caller lookup (populated by the JDK) (must not be {@code null})
+     * @param name the layout name
+     * @param type the type {@code UnionLayout.class} (must not be {@code null})
+     * @param elements the elements of the union (must not be {@code null})
+     * @return the union layout (not {@code null})
+     */
     public static UnionLayout unionLayout(MethodHandles.Lookup lookup, String name, Class<UnionLayout> type,
             MemoryLayout... elements) {
         if (type != UnionLayout.class) {
@@ -272,13 +334,32 @@ public final class Bootstraps {
      * </ul>
      * The following descriptor type sequences are recognized:
      * <ul>
-     * <li>{@code uB} - unsigned byte (one byte)</li>
-     * <li>{@code uS} - unsigned short/char (two bytes)</li>
-     * <li>{@code uI} - unsigned int (four bytes)</li>
-     * <li>{@code uJ} - unsigned long (eight bytes)</li>
+     * <li>{@code uB} - unsigned {@code byte} (one byte)</li>
+     * <li>{@code uS} - unsigned {@code short} (aka {@code char}) (two bytes)</li>
+     * <li>{@code uI} - unsigned {@code int} (four bytes)</li>
+     * <li>{@code uJ} - unsigned {@code long} (eight bytes) (this is also the type used for C {@code unsigned long long}</li>
+     * <li>{@code uc} - C {@code unsigned char} (one byte)</li>
+     * <li>{@code us} - C {@code unsigned short} (size is platform-specific)</li>
+     * <li>{@code ui} - C {@code unsigned int} (size is platform-specific)</li>
+     * <li>{@code ul} - C {@code unsigned long} (size is platform-specific)</li>
      * <li>{@code u*} - unsigned pointer-sized integer (four or eight bytes)</li>
+     * <li>{@code sB} - signed {@code byte} (one byte)</li>
+     * <li>{@code sS} - signed {@code short} (two bytes)</li>
+     * <li>{@code sI} - signed {@code int} (four bytes)</li>
+     * <li>{@code sJ} - signed {@code long} (eight bytes) (this is also the type used for C {@code long long}</li>
+     * <li>{@code sc} - C {@code signed char} (one byte)</li>
+     * <li>{@code ss} - C {@code short} (size is platform-specific)</li>
+     * <li>{@code si} - C {@code int} (size is platform-specific)</li>
+     * <li>{@code sl} - C {@code long} (size is platform-specific)</li>
+     * <li>{@code s*} - signed pointer-sized integer (four or eight bytes)</li>
+     * <li>{@code e} - the integer type corresponding to C {@code errno_t}</li>
+     * <li>{@code c} - C {@code char} (one byte; signedness is platform-specific)</li>
+     * <li>{@code w} - C {@code wchar_t} (size and signedness is platform-specific; use {@code int} for this type)</li>
+     * <li>{@code *} - a pointer/address value</li>
+     * <li>{@code F} - a 32-bit floating-point value (Java and C {@code float})</li>
+     * <li>{@code D} - a 64-bit floating-point value (Java and C {@code double})</li>
+     * <li>{@code Z} - a {@code boolean} (equivalent to C {@code _Bool/bool}</li>
      * </ul>
-     * <!-- TODO complete -->
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
      * @param descStr the native descriptor string (must not be {@code null})

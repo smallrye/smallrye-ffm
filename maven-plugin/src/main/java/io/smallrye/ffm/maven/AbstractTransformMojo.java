@@ -13,8 +13,17 @@ import org.apache.maven.plugin.MojoFailureException;
 import io.smallrye.classfile.ClassFile;
 import io.smallrye.classfile.ClassModel;
 
+/**
+ * The base class for transformation mojos.
+ */
 public abstract class AbstractTransformMojo extends AbstractMojo {
     private static final ClassFile cf = ClassFile.of(ClassFile.StackMapsOption.STACK_MAPS_WHEN_REQUIRED);
+
+    /**
+     * Construct a new instance.
+     */
+    AbstractTransformMojo() {
+    }
 
     public void execute() throws MojoExecutionException, MojoFailureException {
         Path classes = classesDirectory().toPath();
