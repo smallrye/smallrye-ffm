@@ -33,13 +33,7 @@ public final class ErrnoTests {
         // make sure the array is populated correctly
         for (Errno errno : Errno.values()) {
             if (errno.isPresent()) {
-                if (errno == Errno.EWOULDBLOCK && Errno.EWOULDBLOCK.nativeValue() == Errno.EAGAIN.nativeValue()
-                        || errno == Errno.EOPNOTSUPP && Errno.ENOTSUP.nativeValue() == Errno.EOPNOTSUPP.nativeValue()
-                        || errno == Errno.EDEADLK && Errno.EDEADLOCK.nativeValue() == Errno.EDEADLK.nativeValue()) {
-                    // some platforms have the same native value for these two constants
-                    continue;
-                }
-                assertEquals(errno, Errno.ofNativeValue(errno.nativeValue()));
+                assertEquals(errno.nativeValue(), Errno.ofNativeValue(errno.nativeValue()).nativeValue());
             }
         }
     }
