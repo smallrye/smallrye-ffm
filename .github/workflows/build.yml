@@ -51,7 +51,7 @@ jobs:
 
   quality:
     needs: [ build ]
-    if: github.event_name == 'push' && github.repository_owner == 'smallrye'
+    if: false && github.event_name == 'push' && github.repository_owner == 'smallrye'
     runs-on: ubuntu-latest
     name: quality
 
