@@ -9,6 +9,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Set;
 
 import io.smallrye.common.cpu.CPU;
 import io.smallrye.common.os.OS;
@@ -153,7 +154,7 @@ public enum Errno implements NativeIntValued {
      * The {@code errno} constant for {@code EDEADLOCK}.
      */
     EDEADLOCK(45, 45, 11, switch (CPU.host()) {
-        case ppc, ppc32 -> 58;
+        case ppc, ppc32, ppcle, ppc32le -> 58;
         default -> 35;
     }, 36, 116),
     /**
@@ -876,13 +877,17 @@ public enum Errno implements NativeIntValued {
     private static final Errno[] fromInt;
 
     static {
+        Set<Errno> preferred = Set.of(
+                EAGAIN,
+                EDEADLK,
+                EBADMSG,
+                EUCLEAN);
         Errno[] array = new Errno[values.stream().filter(Errno::isPresent).mapToInt(Errno::nativeValue).max().orElse(0) + 1];
         Arrays.fill(array, Errno.UNKNOWN);
         for (Errno value : values) {
             if (value.isPresent()) {
                 int nv = value.nativeValue();
-                if (array[nv] != EAGAIN) {
-                    // EAGAIN is preferred over EWOULDBLOCK
+                if (preferred.contains(value) || !preferred.contains(array[nv])) {
                     array[nv] = value;
                 }
             }
