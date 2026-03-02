@@ -5,7 +5,7 @@
     <parent>
         <groupId>io.smallrye.ffm</groupId>
         <artifactId>smallrye-ffm-parent</artifactId>
-        <version>0.1</version>
+        <version>0.2-SNAPSHOT</version>
     </parent>
 
     <artifactId>smallrye-ffm-maven-plugin</artifactId>
