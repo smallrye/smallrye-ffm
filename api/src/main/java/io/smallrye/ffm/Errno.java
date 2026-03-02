@@ -970,14 +970,13 @@ public enum Errno implements NativeIntValued {
 
     @Link
     @Critical(heap = true)
-    private static native Errno strerror_s(byte[] buf, @As(uintptr) long buflen, @As(stdc_int) int errNum);
+    private static native Errno strerror_s(byte[] buf, @As(size_t) long buflen, @As(stdc_int) int errNum);
 
     @Link
     @Critical(heap = true)
-    private static native Errno strerror_r(@As(stdc_int) int errNum, byte[] buf, @As(uintptr) long buflen);
+    private static native Errno strerror_r(@As(stdc_int) int errNum, byte[] buf, @As(size_t) long buflen);
 
     @Link
     @Critical(heap = true)
-    private static native Errno __xpg_strerror_r(@As(stdc_int) int errNum, byte[] buf,
-            @As(uintptr) long buflen);
+    private static native Errno __xpg_strerror_r(@As(stdc_int) int errNum, byte[] buf, @As(size_t) long buflen);
 }
