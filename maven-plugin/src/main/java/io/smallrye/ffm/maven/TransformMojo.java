@@ -9,7 +9,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 /**
  * The transform Mojo.
  */
-@Mojo(name = "transform", defaultPhase = LifecyclePhase.PROCESS_CLASSES)
+@Mojo(name = "transform", defaultPhase = LifecyclePhase.PROCESS_CLASSES, threadSafe = true)
 public final class TransformMojo extends AbstractTransformMojo {
     /**
      * The directory holding the project classes.
