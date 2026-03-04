@@ -143,6 +143,7 @@ public final class Generator {
         boolean critical = false;
         boolean heap = false;
         boolean link = false;
+        boolean dispatch = false;
         String outputCharset = null;
         String name = mm.methodName().stringValue();
         ClassDesc returnType = mm.methodTypeSymbol().returnType();
@@ -158,6 +159,8 @@ public final class Generator {
                             throw new IllegalArgumentException("Multiple variadic annotations not allowed");
                         }
                     }
+                    case "Lio/smallrye/ffm/Dispatch;" ->
+                        dispatch = true;
                     case "Lio/smallrye/ffm/Link;" -> {
                         link = true;
                         for (AnnotationElement element : annotation.elements()) {
@@ -212,7 +215,10 @@ public final class Generator {
                 }
             }
         }
-        if (!link) {
+        if (link && dispatch) {
+            throw new IllegalArgumentException("Cannot provide both @Link and @Dispatch to the same member");
+        }
+        if (!(link || dispatch)) {
             return false;
         }
 
@@ -235,8 +241,10 @@ public final class Generator {
 
         // handle return right away
         steps.add(new ReturnStep(mtd.returnType(), retAsType));
-        // resolve the symbol
-        steps.add(new ResolvedSymbolStep(name, true));
+        if (link) {
+            // resolve the symbol
+            steps.add(new ResolvedSymbolStep(name, true));
+        }
         if (critical || heap) {
             steps.add(new CriticalStep(heap));
         }
@@ -251,6 +259,9 @@ public final class Generator {
             for (Annotation annotation : annotations) {
                 switch (annotation.className().stringValue()) {
                     case "Lio/smallrye/ffm/As;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
                         // explicit type
                         loop: for (AnnotationElement element : annotation.elements()) {
                             AnnotationValue value = element.value();
@@ -265,6 +276,9 @@ public final class Generator {
                         }
                     }
                     case "Lio/smallrye/ffm/AsCharset;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
                         loop: for (AnnotationElement element : annotation.elements()) {
                             AnnotationValue value = element.value();
                             switch (element.name().stringValue()) {
@@ -278,10 +292,23 @@ public final class Generator {
                         }
                     }
                     // explicit copy-in policy
-                    case "Lio/smallrye/ffm/In;" -> in = true;
+                    case "Lio/smallrye/ffm/In;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
+                        in = true;
+                    }
                     // explicit copy-out policy
-                    case "Lio/smallrye/ffm/Out;" -> out = true;
+                    case "Lio/smallrye/ffm/Out;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
+                        out = true;
+                    }
                     case "Lio/smallrye/ffm/Variadic;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
                         if (variadic == -1) {
                             variadic = i;
                         } else {
@@ -289,6 +316,9 @@ public final class Generator {
                         }
                     }
                     case "Lio/smallrye/ffm/Capture;" -> {
+                        if (dispatch && i == 0) {
+                            throw firstDispatchArgViolation();
+                        }
                         if (capture == -1) {
                             capture = i;
                         } else {
@@ -315,6 +345,15 @@ public final class Generator {
                             }
                         }
                     }
+                }
+            }
+            if (dispatch && i == 0) {
+                if (mtd.parameterType(i).descriptorString().equals("Ljava/lang/foreign/MemorySegment;")) {
+                    steps.add(new UserSymbolStep(i));
+                    slot++;
+                    continue;
+                } else {
+                    throw firstDispatchArgViolation();
                 }
             }
             if (capture == i) {
@@ -436,6 +475,10 @@ public final class Generator {
             });
         });
         return true;
+    }
+
+    private static IllegalArgumentException firstDispatchArgViolation() {
+        return new IllegalArgumentException("First argument of @Dispatch must be the function pointer with no annotations");
     }
 
     private static String defaultAsType(final ClassDesc classDesc) {
@@ -608,6 +651,26 @@ public final class Generator {
                             "_",
                             CD_SymbolLookup,
                             defaultLookup ? TRUE : FALSE)));
+            super.call(cb, steps, index);
+        }
+    }
+
+    static final class UserSymbolStep extends Step {
+        private final int slot;
+
+        UserSymbolStep(final int slot) {
+            this.slot = slot;
+        }
+
+        void addDowncallArgsDescs(final List<Step> steps, final int index, final List<ClassDesc> descs) {
+            // the function pointer
+            descs.add(CD_MemorySegment);
+            // remaining arguments
+            super.addDowncallArgsDescs(steps, index, descs);
+        }
+
+        void call(final CodeBuilder cb, final List<Step> steps, final int index) {
+            cb.aload(slot);
             super.call(cb, steps, index);
         }
     }
