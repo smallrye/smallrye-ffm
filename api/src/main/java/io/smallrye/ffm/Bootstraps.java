@@ -28,7 +28,6 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
-import io.smallrye.common.constraint.Assert;
 import io.smallrye.common.cpu.CPU;
 import io.smallrye.common.os.OS;
 
@@ -164,33 +163,6 @@ public final class Bootstraps {
             base = base.withName(name);
         }
         return base;
-    }
-
-    /**
-     * {@return a fixed allocator which only returns the given segment}
-     * The segment is only returned one time;
-     * subsequent allocation requests are rejected.
-     *
-     * @param segment the memory segment to return once (must not be {@code null})
-     */
-    public static SegmentAllocator fixedAllocator(MemorySegment segment) {
-        Assert.checkNotNullParam("segment", segment);
-        return new SegmentAllocator() {
-            boolean used = false;
-
-            public MemorySegment allocate(final long size, final long align) {
-                if (size == 0) {
-                    return MemorySegment.NULL;
-                }
-                if (!used) {
-                    used = true;
-                    if (size <= segment.byteSize() && align <= segment.maxByteAlignment()) {
-                        return segment;
-                    }
-                }
-                throw new IllegalArgumentException("Invalid allocation");
-            }
-        };
     }
 
     /**
