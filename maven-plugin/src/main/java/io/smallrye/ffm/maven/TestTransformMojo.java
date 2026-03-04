@@ -9,7 +9,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 /**
  * The test transform Mojo.
  */
-@Mojo(name = "transform-test", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES)
+@Mojo(name = "transform-test", defaultPhase = LifecyclePhase.PROCESS_TEST_CLASSES, threadSafe = true)
 public final class TestTransformMojo extends AbstractTransformMojo {
     /**
      * The directory holding the project test classes.
