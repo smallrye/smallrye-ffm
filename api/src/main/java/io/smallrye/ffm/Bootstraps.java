@@ -514,9 +514,8 @@ public final class Bootstraps {
                     if (returnConv != null) {
                         handle = MethodHandles.filterReturnValue(handle, returnConv);
                     }
-                    // special case: add errno-resetting hook if needed
-                    // todo: remove for JDKs which solve https://bugs.openjdk.org/browse/JDK-8378559
-                    if (captureErrno) {
+                    if (fillErrno && captureErrno) {
+                        // special case: add errno-resetting hook if needed
                         handle = MethodHandles.collectArguments(handle, 1, staticMethod(Bootstraps.class, "fillErrno",
                                 "(Ljava/lang/foreign/MemorySegment;)Ljava/lang/foreign/MemorySegment;", false));
                     }
@@ -1593,20 +1592,25 @@ public final class Bootstraps {
         return val != 0;
     }
 
+    private static final boolean fillErrno;
     private static final MethodHandle errnoHandle;
 
     static {
-        // todo: this should not be needed on 26+
-        // ref: https://bugs.openjdk.org/browse/JDK-8378559
-        Linker linker = Linker.nativeLinker();
-        errnoHandle = linker.downcallHandle(linker.defaultLookup().findOrThrow(switch (OS.current()) {
-            case WINDOWS, Z -> "_errno";
-            case LINUX -> "__errno_location";
-            case MAC -> "__error";
-            case AIX -> "_Errno";
-            case SOLARIS -> "___errno";
-            default -> throw new UnsupportedOperationException("Cannot resolve errno function on current OS");
-        }), FunctionDescriptor.of(ValueLayout.ADDRESS), Linker.Option.critical(false));
+        fillErrno = Runtime.version().feature() == 25;
+        if (fillErrno) {
+            // ref: https://bugs.openjdk.org/browse/JDK-8378559
+            Linker linker = Linker.nativeLinker();
+            errnoHandle = linker.downcallHandle(linker.defaultLookup().findOrThrow(switch (OS.current()) {
+                case WINDOWS, Z -> "_errno";
+                case LINUX -> "__errno_location";
+                case MAC -> "__error";
+                case AIX -> "_Errno";
+                case SOLARIS -> "___errno";
+                default -> throw new UnsupportedOperationException("Cannot resolve errno function on current OS");
+            }), FunctionDescriptor.of(ValueLayout.ADDRESS), Linker.Option.critical(false));
+        } else {
+            errnoHandle = null;
+        }
     }
 
     private static final VarHandle errnoGroupHandle = callStateHandle(lookup(), "errno", VarHandle.class);
