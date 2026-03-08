@@ -214,23 +214,21 @@ public final class Bootstraps {
     /**
      * Dynamic constant bootstrap which produces the {@link SymbolLookup} for the calling class.
      * This allows the same instance to be used for all lookups in the class.
+     * <p>
+     * The returned symbol lookup will find symbols in libraries loaded by the caller's class loader,
+     * and also symbols in the standard set which is loaded by the JVM itself (for example, {@code libc} symbols
+     * are usually available).
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
      * @param name ignored
      * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
-     * @param systemLinker {@code true} to use the system linker for lookups (e.g. {@code libc}),
-     *        or {@code false} to use the lookup associated with the caller's class loader
-     *        (e.g. in conjunction with {@link System#loadLibrary(String)})
      * @return the symbol lookup (not {@code null})
      */
-    public static SymbolLookup symbolLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type,
-            boolean systemLinker) {
+    public static SymbolLookup symbolLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type) {
         if (type != SymbolLookup.class) {
             throw wrongType();
         }
-        if (systemLinker) {
-            return Linker.nativeLinker().defaultLookup();
-        }
+        SymbolLookup system = Linker.nativeLinker().defaultLookup();
         // use a method handle here so that we can call {@code loaderLookup} on behalf of the caller
         MethodHandle loaderLookup;
         try {
@@ -238,13 +236,15 @@ public final class Bootstraps {
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw toError(e);
         }
+        SymbolLookup loader;
         try {
-            return (SymbolLookup) loaderLookup.invokeExact();
+            loader = (SymbolLookup) loaderLookup.invokeExact();
         } catch (RuntimeException | Error e) {
             throw e;
         } catch (Throwable e) {
             throw new UndeclaredThrowableException(e);
         }
+        return loader.or(system);
     }
 
     /**

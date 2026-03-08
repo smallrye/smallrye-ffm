@@ -243,7 +243,7 @@ public final class Generator {
         steps.add(new ReturnStep(mtd.returnType(), retAsType));
         if (link) {
             // resolve the symbol
-            steps.add(new ResolvedSymbolStep(name, true));
+            steps.add(new ResolvedSymbolStep(name));
         }
         if (critical || heap) {
             steps.add(new CriticalStep(heap));
@@ -525,8 +525,7 @@ public final class Generator {
     private static final DirectMethodHandleDesc CD_Bootstraps_symbolLookup = ofConstantBootstrap(
             CD_Bootstraps,
             "symbolLookup",
-            CD_SymbolLookup,
-            CD_boolean);
+            CD_SymbolLookup);
     private static final DirectMethodHandleDesc CD_Bootstraps_linkSymbol = ofCallsiteBootstrap(
             CD_Bootstraps,
             "linkSymbol",
@@ -626,11 +625,9 @@ public final class Generator {
 
     static final class ResolvedSymbolStep extends Step {
         private final String name;
-        private final boolean defaultLookup;
 
-        ResolvedSymbolStep(final String name, final boolean defaultLookup) {
+        ResolvedSymbolStep(final String name) {
             this.name = name;
-            this.defaultLookup = defaultLookup;
         }
 
         void addDowncallArgsDescs(final List<Step> steps, final int index, final List<ClassDesc> descs) {
@@ -649,8 +646,7 @@ public final class Generator {
                     DynamicConstantDesc.ofNamed(
                             CD_Bootstraps_symbolLookup,
                             "_",
-                            CD_SymbolLookup,
-                            defaultLookup ? TRUE : FALSE)));
+                            CD_SymbolLookup)));
             super.call(cb, steps, index);
         }
     }
