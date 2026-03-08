@@ -4,7 +4,7 @@
 
     <groupId>io.smallrye.ffm</groupId>
     <artifactId>smallrye-ffm-parent</artifactId>
-    <version>0.2</version>
+    <version>0.3-SNAPSHOT</version>
 
     <properties>
         <jdk.min.version>25</jdk.min.version>
@@ -42,7 +42,7 @@
         <url>https://github.com/smallrye/smallrye-ffm</url>
         <connection>scm:git:git@github.com:smallrye/smallrye-ffm</connection>
         <developerConnection>scm:git:git@github.com:smallrye/smallrye-ffm</developerConnection>
-      <tag>0.2</tag>
+      <tag>HEAD</tag>
   </scm>
 
     <issueManagement>
