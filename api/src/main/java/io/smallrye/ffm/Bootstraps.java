@@ -2,6 +2,7 @@ package io.smallrye.ffm;
 
 import static java.lang.invoke.MethodHandles.*;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.FunctionDescriptor;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemoryLayout;
@@ -228,7 +229,6 @@ public final class Bootstraps {
         if (type != SymbolLookup.class) {
             throw wrongType();
         }
-        SymbolLookup system = Linker.nativeLinker().defaultLookup();
         // use a method handle here so that we can call {@code loaderLookup} on behalf of the caller
         MethodHandle loaderLookup;
         try {
@@ -244,7 +244,7 @@ public final class Bootstraps {
         } catch (Throwable e) {
             throw new UndeclaredThrowableException(e);
         }
-        return loader.or(system);
+        return loader.or(Linker.nativeLinker().defaultLookup());
     }
 
     /**
@@ -540,6 +540,22 @@ public final class Bootstraps {
             }
         }
         throw invalidDesc(descStr);
+    }
+
+    /**
+     * A constant bootstrap which returns an {@linkplain Arena#ofAuto automatic arena}.
+     * The arena is garbage-collected with the class containing it.
+     *
+     * @param lookup the lookup (must not be {@code null})
+     * @param ignored ignored
+     * @param type the type (must be {@code Arena.class}
+     * @return the arena (not {@code null})
+     */
+    public static Arena autoArena(Lookup lookup, String ignored, Class<Arena> type) {
+        if (type != Arena.class) {
+            throw wrongType();
+        }
+        return Arena.ofAuto();
     }
 
     private static IllegalArgumentException invalidDesc(final String name) {
