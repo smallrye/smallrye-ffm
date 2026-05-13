@@ -10,6 +10,7 @@ module io.smallrye.ffm {
     requires static io.smallrye.common.annotation;
     requires io.smallrye.common.cpu;
     requires io.smallrye.common.os;
+    requires io.smallrye.common.constraint;
 
     exports io.smallrye.ffm;
 }

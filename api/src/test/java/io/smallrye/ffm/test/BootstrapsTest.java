@@ -4,6 +4,7 @@ import static java.lang.invoke.MethodHandles.*;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.*;
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.SymbolLookup;
@@ -14,8 +15,13 @@ import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 
+import io.smallrye.common.os.OS;
 import io.smallrye.ffm.Bootstraps;
+import io.smallrye.ffm.Critical;
+import io.smallrye.ffm.In;
+import io.smallrye.ffm.Lib;
 import io.smallrye.ffm.Link;
+import io.smallrye.ffm.Out;
 
 public final class BootstrapsTest {
     public BootstrapsTest() {
@@ -39,6 +45,39 @@ public final class BootstrapsTest {
         CallSite cs = Bootstraps.linkSymbol(lookup(), "tan", MethodType.methodType(MemorySegment.class), symbolLookup);
         MemorySegment seg = (MemorySegment) cs.getTarget().invoke();
         assertEquals(seg.address(), tan.get().address());
+    }
+
+    @Test
+    public void testWindowsLib() throws Throwable {
+        assumeTrue(BootstrapsTest.class.getModule().isNativeAccessEnabled());
+        assumeTrue(OS.current() == OS.WINDOWS);
+        try (Arena arena = Arena.ofConfined()) {
+            SymbolLookup kernel32 = Bootstraps.libraryLookup(lookup(), "kernel32", SymbolLookup.class, arena,
+                    Bootstraps.emptySymbolLookup(lookup(), "_", SymbolLookup.class));
+            Optional<MemorySegment> getComputerNameW = kernel32.find("GetComputerNameW");
+            assertTrue(getComputerNameW.isPresent());
+        }
+        // now run an actual function
+        char[] chars = new char[512];
+        int[] lenBuf = new int[1];
+        lenBuf[0] = chars.length;
+        boolean res = GetComputerNameW(chars, lenBuf);
+        // if there's no host name, it's not worth failing the test
+        assumeTrue(res);
+        System.out.println("The computer name is: " + new String(chars, 0, lenBuf[0]));
+    }
+
+    @Test
+    public void testLibLinking() throws Throwable {
+        assumeTrue(BootstrapsTest.class.getModule().isNativeAccessEnabled());
+        boolean zlibFound = false;
+        try (Arena arena = Arena.ofConfined()) {
+            SymbolLookup.libraryLookup(System.mapLibraryName("z"), arena);
+            zlibFound = true;
+        } catch (IllegalArgumentException ignored) {
+        }
+        assumeTrue(zlibFound);
+        System.out.println("Zlib version is: " + zlibVersion());
     }
 
     @Test
@@ -77,4 +116,13 @@ public final class BootstrapsTest {
 
     @Link
     private static native void non_existing_function();
+
+    @Link
+    @Lib("kernel32")
+    @Critical(heap = true)
+    private static native boolean GetComputerNameW(@Out char[] buffer, @In @Out int[] lenPtr);
+
+    @Link
+    @Lib("z")
+    private static native String zlibVersion();
 }
