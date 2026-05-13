@@ -17,6 +17,7 @@ import java.lang.foreign.SegmentAllocator;
 import java.lang.foreign.StructLayout;
 import java.lang.foreign.SymbolLookup;
 import java.lang.foreign.ValueLayout;
+import java.lang.invoke.VarHandle;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -30,6 +31,7 @@ import io.smallrye.classfile.AnnotationValue;
 import io.smallrye.classfile.Attributes;
 import io.smallrye.classfile.ClassBuilder;
 import io.smallrye.classfile.ClassElement;
+import io.smallrye.classfile.ClassModel;
 import io.smallrye.classfile.CodeBuilder;
 import io.smallrye.classfile.CodeElement;
 import io.smallrye.classfile.CodeModel;
@@ -58,12 +60,13 @@ public final class Generator {
      * Process a single element.
      *
      * @param zb the class builder (must not be {@code null})
+     * @param cm the class model (must not be {@code null})
      * @param ce the class element (must not be {@code null})
      * @return {@code true} if the class was transformed, or {@code false} if it was not
      */
-    public static boolean processElement(final ClassBuilder zb, final ClassElement ce) {
+    public static boolean processElement(final ClassBuilder zb, final ClassModel cm, final ClassElement ce) {
         if (ce instanceof MethodModel mm
-                && (processMethodForConstants(mm, zb) || processNativeMethod(mm, zb))) {
+                && (processMethodForConstants(mm, zb) || processNativeMethod(mm, cm, zb))) {
             return true;
         } else {
             zb.with(ce);
@@ -133,9 +136,24 @@ public final class Generator {
         return found;
     }
 
-    private static boolean processNativeMethod(MethodModel mm, ClassBuilder zb) {
+    private static final List<String> defaultLibs = List.of("<<LOADER>>", "<<SYSTEM>>");
+
+    private static boolean processNativeMethod(MethodModel mm, final ClassModel cm, ClassBuilder zb) {
+        // library search order
+        List<String> libs = defaultLibs;
+        // gather the class-level annotations
+        Optional<RuntimeInvisibleAnnotationsAttribute> ria = cm.findAttribute(Attributes.runtimeInvisibleAnnotations());
+        if (ria.isPresent()) {
+            List<Annotation> annotations = ria.get().annotations();
+            for (Annotation annotation : annotations) {
+                switch (annotation.className().stringValue()) {
+                    case "Lio/smallrye/ffm/Lib$List;" -> libs = readLibListAnnotation(annotation);
+                    case "Lio/smallrye/ffm/Lib;" -> libs = readLibAnnotation(annotation);
+                }
+            }
+        }
         // gather the method-level annotations
-        Optional<RuntimeInvisibleAnnotationsAttribute> ria = mm.findAttribute(Attributes.runtimeInvisibleAnnotations());
+        ria = mm.findAttribute(Attributes.runtimeInvisibleAnnotations());
         int variadic = -1;
         if (!mm.flags().has(AccessFlag.NATIVE)) {
             return false;
@@ -152,6 +170,8 @@ public final class Generator {
             List<Annotation> annotations = ria.get().annotations();
             for (Annotation annotation : annotations) {
                 switch (annotation.className().stringValue()) {
+                    case "Lio/smallrye/ffm/Lib$List;" -> libs = readLibListAnnotation(annotation);
+                    case "Lio/smallrye/ffm/Lib;" -> libs = readLibAnnotation(annotation);
                     case "Lio/smallrye/ffm/Variadic;" -> {
                         if (variadic == -1) {
                             variadic = -2;
@@ -240,10 +260,10 @@ public final class Generator {
         int capture = -1;
 
         // handle return right away
-        steps.add(new ReturnStep(mtd.returnType(), retAsType));
+        steps.add(new ReturnStep(retAsType));
         if (link) {
             // resolve the symbol
-            steps.add(new ResolvedSymbolStep(name));
+            steps.add(new ResolvedSymbolStep(name, libs));
         }
         if (critical || heap) {
             steps.add(new CriticalStep(heap));
@@ -426,10 +446,6 @@ public final class Generator {
             }
             slot += TypeKind.from(mtd.parameterType(i)).slotSize();
         }
-        switch (mtd.returnType().descriptorString()) {
-            case "Ljava/lang/String;" -> steps.add(new StringResultStep(outputCharset));
-        }
-
         if (compilers.captureStep != null) {
             if (compilers.allocatorStep == null) {
                 compilers.allocatorStep = new AlwaysArenaStep();
@@ -438,6 +454,11 @@ public final class Generator {
         }
         if (compilers.allocatorStep != null) {
             steps.add(insertionPoint, compilers.allocatorStep);
+        }
+
+        switch (mtd.returnType().descriptorString()) {
+            case "Ljava/lang/String;" -> steps.add(new StringResultStep(outputCharset));
+            default -> steps.add(new SimpleResultStep(mtd.returnType()));
         }
 
         steps.addLast(new InvokeStep());
@@ -475,6 +496,44 @@ public final class Generator {
             });
         });
         return true;
+    }
+
+    private static List<String> readLibAnnotation(final Annotation annotation) {
+        String val = null;
+        for (AnnotationElement element : annotation.elements()) {
+            AnnotationValue value = element.value();
+            switch (element.name().stringValue()) {
+                case "value" -> {
+                    if (value instanceof AnnotationValue.OfString os) {
+                        val = os.stringValue();
+                    }
+                }
+            }
+        }
+        return val == null ? List.of() : List.of(val);
+    }
+
+    private static List<String> readLibListAnnotation(final Annotation annotation) {
+        List<String> libs = List.of();
+        for (AnnotationElement element : annotation.elements()) {
+            AnnotationValue value = element.value();
+            switch (element.name().stringValue()) {
+                case "value" -> {
+                    if (value instanceof AnnotationValue.OfArray oa) {
+                        libs = new ArrayList<>(oa.values().size());
+                        for (AnnotationValue subValue : oa.values()) {
+                            if (subValue instanceof AnnotationValue.OfAnnotation oa2) {
+                                Annotation subAnnotation = oa2.annotation();
+                                switch (subAnnotation.className().stringValue()) {
+                                    case "Lio/smallrye/ffm/Lib;" -> libs.addAll(readLibAnnotation(annotation));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return List.copyOf(libs);
     }
 
     private static IllegalArgumentException firstDispatchArgViolation() {
@@ -518,39 +577,68 @@ public final class Generator {
     private static final ClassDesc CD_ValueLayout_OfBoolean = ClassDesc.of(ValueLayout.OfBoolean.class.getName());
     private static final ClassDesc CD_WSALastErrorConsumer = ClassDesc.of("io.smallrye.ffm.WSALastErrorConsumer");
 
+    private static final DirectMethodHandleDesc CD_Bootstraps_autoArena = ofConstantBootstrap(
+            CD_Bootstraps,
+            "autoArena",
+            CD_Arena);
+    private static final DirectMethodHandleDesc CD_Bootstraps_callStateHandle = ofConstantBootstrap(
+            CD_Bootstraps,
+            "callStateHandle",
+            CD_VarHandle);
     private static final DirectMethodHandleDesc CD_Bootstraps_charset = ofConstantBootstrap(
             CD_Bootstraps,
             "charset",
             CD_Charset);
-    private static final DirectMethodHandleDesc CD_Bootstraps_symbolLookup = ofConstantBootstrap(
+    private static final DirectMethodHandleDesc CD_Bootstraps_defaultLookup = ofConstantBootstrap(
             CD_Bootstraps,
-            "symbolLookup",
+            "defaultLookup",
+            CD_SymbolLookup,
+            CD_SymbolLookup);
+    private static final DirectMethodHandleDesc CD_Bootstraps_downcall = ofCallsiteBootstrap(
+            CD_Bootstraps,
+            "downcall",
+            CD_CallSite);
+    private static final DirectMethodHandleDesc CD_Bootstraps_emptySymbolLookup = ofConstantBootstrap(
+            CD_Bootstraps,
+            "emptySymbolLookup",
+            CD_SymbolLookup);
+    private static final DirectMethodHandleDesc CD_Bootstraps_libraryLookup = ofConstantBootstrap(
+            CD_Bootstraps,
+            "libraryLookup",
+            CD_SymbolLookup,
+            CD_Arena,
             CD_SymbolLookup);
     private static final DirectMethodHandleDesc CD_Bootstraps_linkSymbol = ofCallsiteBootstrap(
             CD_Bootstraps,
             "linkSymbol",
             CD_CallSite,
             CD_SymbolLookup);
-    private static final DirectMethodHandleDesc CD_Bootstraps_callStateHandle = ofConstantBootstrap(
+    private static final DirectMethodHandleDesc CD_Bootstraps_loaderLookup = ofConstantBootstrap(
             CD_Bootstraps,
-            "callStateHandle",
-            CD_VarHandle);
-    private static final DirectMethodHandleDesc CD_Bootstraps_downcall = ofCallsiteBootstrap(
-            CD_Bootstraps,
-            "downcall",
-            CD_CallSite);
-    private static final DynamicConstantDesc<Object> DCD_errno_VarHandle = DynamicConstantDesc.ofNamed(
+            "defaultLookup",
+            CD_SymbolLookup,
+            CD_SymbolLookup);
+
+    private static final DynamicConstantDesc<VarHandle> DCD_errno_VarHandle = DynamicConstantDesc.ofNamed(
             CD_Bootstraps_callStateHandle,
             "errno",
             CD_VarHandle);
-    private static final DynamicConstantDesc<Object> DCD_LastError_VarHandle = DynamicConstantDesc.ofNamed(
+    private static final DynamicConstantDesc<VarHandle> DCD_LastError_VarHandle = DynamicConstantDesc.ofNamed(
             CD_Bootstraps_callStateHandle,
             "LastError",
             CD_VarHandle);
-    private static final DynamicConstantDesc<Object> DCD_WSALastError_VarHandle = DynamicConstantDesc.ofNamed(
+    private static final DynamicConstantDesc<VarHandle> DCD_WSALastError_VarHandle = DynamicConstantDesc.ofNamed(
             CD_Bootstraps_callStateHandle,
             "WSALastError",
             CD_VarHandle);
+    private static final DynamicConstantDesc<SymbolLookup> DCD_Bootstraps_emptySymbolLookup = DynamicConstantDesc.ofNamed(
+            CD_Bootstraps_emptySymbolLookup,
+            "_",
+            CD_SymbolLookup);
+    private static final DynamicConstantDesc<Arena> DCD_Bootstraps_autoArena = DynamicConstantDesc.ofNamed(
+            CD_Bootstraps_autoArena,
+            "_",
+            CD_Arena);
 
     static String valueLayoutName(ClassDesc primType) {
         return switch (primType.descriptorString().charAt(0)) {
@@ -607,6 +695,9 @@ public final class Generator {
             steps.get(next).setReturnDesc(steps, next, sb);
         }
 
+        /**
+         * {@return the return type of the downcall method}
+         */
         ClassDesc getReturnType(final List<Step> steps, final int index) {
             int next = index + 1;
             return steps.get(next).getReturnType(steps, next);
@@ -625,9 +716,11 @@ public final class Generator {
 
     static final class ResolvedSymbolStep extends Step {
         private final String name;
+        private final List<String> libs;
 
-        ResolvedSymbolStep(final String name) {
+        ResolvedSymbolStep(final String name, final List<String> libs) {
             this.name = name;
+            this.libs = libs;
         }
 
         void addDowncallArgsDescs(final List<Step> steps, final int index, final List<ClassDesc> descs) {
@@ -637,16 +730,48 @@ public final class Generator {
             super.addDowncallArgsDescs(steps, index, descs);
         }
 
+        /**
+         * Recursively build up the symbol lookup to use for this method.
+         * Note that if two methods use the same symbol lookup sequence, they should end up collapsing to a single constant.
+         *
+         * @param index the list index (0 <= n <= libs.size())
+         * @return the outermost constant
+         */
+        DynamicConstantDesc<SymbolLookup> buildSymbolLookup(int index) {
+            if (index == libs.size()) {
+                // no more lib specs, next is "empty"
+                return DCD_Bootstraps_emptySymbolLookup;
+            }
+            // else recurse first, then wrap
+            DynamicConstantDesc<SymbolLookup> next = buildSymbolLookup(index + 1);
+            String val = libs.get(index);
+            return switch (val) {
+                case "<<SYSTEM>>" -> DynamicConstantDesc.ofNamed(
+                        CD_Bootstraps_defaultLookup,
+                        "_",
+                        CD_SymbolLookup,
+                        next);
+                case "<<LOADER>>" -> DynamicConstantDesc.ofNamed(
+                        CD_Bootstraps_loaderLookup,
+                        "_",
+                        CD_SymbolLookup,
+                        next);
+                default -> DynamicConstantDesc.ofNamed(
+                        CD_Bootstraps_libraryLookup,
+                        val,
+                        CD_SymbolLookup,
+                        DCD_Bootstraps_autoArena,
+                        next);
+            };
+        }
+
         void call(final CodeBuilder cb, final List<Step> steps, final int index) {
             // get the resolved symbol before anything else (throws an exception if unresolved)
             cb.invokedynamic(DynamicCallSiteDesc.of(
                     CD_Bootstraps_linkSymbol,
                     name,
                     MethodTypeDesc.of(CD_MemorySegment),
-                    DynamicConstantDesc.ofNamed(
-                            CD_Bootstraps_symbolLookup,
-                            "_",
-                            CD_SymbolLookup)));
+                    buildSymbolLookup(0)));
             super.call(cb, steps, index);
         }
     }
@@ -672,11 +797,9 @@ public final class Generator {
     }
 
     static final class ReturnStep extends Step {
-        private final ClassDesc returnType;
         private final String asType;
 
-        ReturnStep(final ClassDesc returnType, final String asType) {
-            this.returnType = returnType;
+        ReturnStep(final String asType) {
             this.asType = asType;
         }
 
@@ -688,14 +811,10 @@ public final class Generator {
             });
         }
 
-        ClassDesc getReturnType(final List<Step> steps, final int index) {
-            return returnType;
-        }
-
         void call(final CodeBuilder cb, final List<Step> steps, final int index) {
             super.call(cb, steps, index);
             // return the result
-            cb.return_(TypeKind.from(returnType));
+            cb.return_(TypeKind.from(super.getReturnType(steps, index)));
         }
     }
 
@@ -1264,6 +1383,18 @@ public final class Generator {
         }
     }
 
+    static class SimpleResultStep extends Step {
+        private final ClassDesc returnType;
+
+        SimpleResultStep(final ClassDesc returnType) {
+            this.returnType = returnType;
+        }
+
+        ClassDesc getReturnType(final List<Step> steps, final int index) {
+            return returnType;
+        }
+    }
+
     static class StringResultStep extends Step {
         private final String charset;
 
@@ -1271,8 +1402,15 @@ public final class Generator {
             this.charset = charset;
         }
 
+        ClassDesc getReturnType(final List<Step> steps, final int index) {
+            return CD_MemorySegment;
+        }
+
         void call(final CodeBuilder cb, final List<Step> steps, final int index) {
             super.call(cb, steps, index);
+            // assume a max byte length of 1024
+            cb.loadConstant(1024L);
+            cb.invokeinterface(CD_MemorySegment, "reinterpret", MethodTypeDesc.of(CD_MemorySegment, CD_long));
             cb.lconst_0();
             if (charset == null) {
                 cb.invokeinterface(CD_MemorySegment, "getString", MethodTypeDesc.of(CD_String, CD_long));

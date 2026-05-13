@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
+import io.smallrye.common.constraint.Assert;
 import io.smallrye.common.cpu.CPU;
 import io.smallrye.common.os.OS;
 
@@ -213,19 +214,51 @@ public final class Bootstraps {
     }
 
     /**
-     * Dynamic constant bootstrap which produces the {@link SymbolLookup} for the calling class.
-     * This allows the same instance to be used for all lookups in the class.
-     * <p>
-     * The returned symbol lookup will find symbols in libraries loaded by the caller's class loader,
-     * and also symbols in the standard set which is loaded by the JVM itself (for example, {@code libc} symbols
-     * are usually available).
+     * The empty symbol lookup.
+     * Always returns an empty {@code Optional}.
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
      * @param name ignored
      * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
+     * @return the empty symbol lookup (not {@code null})
+     */
+    public static SymbolLookup emptySymbolLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type) {
+        return __ -> Optional.empty();
+    }
+
+    /**
+     * The default symbol lookup.
+     * Returns the lookup returned by {@link Linker#defaultLookup()}.
+     *
+     * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
+     * @param name ignored
+     * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
+     * @param next the next symbol lookup (must not be {@code null})
+     * @return the empty symbol lookup (not {@code null})
+     */
+    public static SymbolLookup defaultLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type,
+            SymbolLookup next) {
+        if (type != SymbolLookup.class) {
+            throw wrongType();
+        }
+        return Linker.nativeLinker().defaultLookup().or(Assert.checkNotNullParam("next", next));
+    }
+
+    /**
+     * Dynamic constant bootstrap which produces the {@link SymbolLookup} for the calling class.
+     * This allows the same instance to be used for all lookups in the class.
+     * <p>
+     * The returned symbol lookup will find symbols in libraries loaded by the caller's class loader,
+     * and also symbols in the given delegate symbol lookup.
+     *
+     * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
+     * @param name ignored
+     * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
+     * @param next the next symbol lookup (must not be {@code null})
      * @return the symbol lookup (not {@code null})
      */
-    public static SymbolLookup symbolLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type) {
+    public static SymbolLookup loaderLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type,
+            SymbolLookup next) {
         if (type != SymbolLookup.class) {
             throw wrongType();
         }
@@ -244,7 +277,48 @@ public final class Bootstraps {
         } catch (Throwable e) {
             throw new UndeclaredThrowableException(e);
         }
-        return loader.or(Linker.nativeLinker().defaultLookup());
+        return loader.or(next);
+    }
+
+    /**
+     * Dynamic constant bootstrap which produces the {@link SymbolLookup} for the named library with an automatic arena.
+     * The same instance may be used for all lookups in the class.
+     * <p>
+     * The returned symbol lookup will find symbols in the named library,
+     * and also symbols in the given delegate symbol lookup.
+     *
+     * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
+     * @param name the library name (must not be {@code null} or empty)
+     * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
+     * @param arena the arena to use for the returned symbols (must not be {@code null})
+     * @param next the next symbol lookup (must not be {@code null})
+     * @return the symbol lookup (not {@code null})
+     */
+    public static SymbolLookup libraryLookup(MethodHandles.Lookup lookup, String name, Class<SymbolLookup> type, Arena arena,
+            SymbolLookup next) {
+        if (type != SymbolLookup.class) {
+            throw wrongType();
+        }
+        Assert.checkNotNullParam("name", name);
+        Assert.checkNotEmptyParam("name", name);
+        Assert.checkNotNullParam("arena", arena);
+        // use a method handle here so that we can call {@code libraryLookup} on behalf of the caller
+        MethodHandle loaderLookup;
+        try {
+            loaderLookup = lookup.findStatic(SymbolLookup.class, "libraryLookup",
+                    MethodType.methodType(SymbolLookup.class, String.class, Arena.class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw toError(e);
+        }
+        SymbolLookup symLookup;
+        try {
+            symLookup = (SymbolLookup) loaderLookup.invokeExact(System.mapLibraryName(name), arena);
+        } catch (RuntimeException | Error e) {
+            throw e;
+        } catch (Throwable e) {
+            throw new UndeclaredThrowableException(e);
+        }
+        return symLookup.or(next);
     }
 
     /**
@@ -254,7 +328,7 @@ public final class Bootstraps {
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
      * @param name the name of the symbol to link (must not be {@code null})
      * @param type {@code ()Ljava/lang/foreign/MemorySegment;}, provided by the JVM (must not be {@code null})
-     * @param symbolLookup the symbol lookup returned by {@link #symbolLookup} (must not be {@code null})
+     * @param symbolLookup a valid symbol lookup (must not be {@code null})
      * @return a call site which either returns the linked symbol or throws an error (not {@code null})
      */
     public static CallSite linkSymbol(MethodHandles.Lookup lookup, String name, MethodType type, SymbolLookup symbolLookup) {

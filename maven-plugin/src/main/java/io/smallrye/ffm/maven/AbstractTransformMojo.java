@@ -53,7 +53,7 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
                         boolean res;
                     };
                     byte[] result = cf.transformClass(cm, (zb, ce) -> {
-                        if (Generator.processElement(zb, ce)) {
+                        if (Generator.processElement(zb, cm, ce)) {
                             resHolder.res = true;
                         }
                     });
