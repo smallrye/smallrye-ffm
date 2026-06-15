@@ -1239,7 +1239,7 @@ public final class Generator {
                     }
                     b1.aload(temp);
                 });
-                super.call(cb, steps, index);
+                super.call(b0, steps, index);
                 if (out) {
                     b0.iload(isNative);
                     b0.ifThen(Opcode.IFEQ, b1 -> {
