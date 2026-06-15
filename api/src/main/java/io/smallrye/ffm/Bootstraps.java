@@ -23,11 +23,13 @@ import java.lang.invoke.VarHandle;
 import java.lang.invoke.WrongMethodTypeException;
 import java.lang.reflect.UndeclaredThrowableException;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.smallrye.common.constraint.Assert;
 import io.smallrye.common.cpu.CPU;
@@ -41,6 +43,22 @@ public final class Bootstraps {
     }
 
     private static final Linker.Option[] NO_OPTIONS = new Linker.Option[0];
+
+    /* @formatter:off */
+    /**
+     * Per-class library search paths, keyed by the class that registered them.
+     * Uses {@link ClassValue} to avoid preventing class unloading (unlike a plain
+     * {@code ConcurrentHashMap<Class<?>, ...>} which would hold strong references
+     * to the class and its class loader).
+     * A {@code null} reference value indicates no search paths have been registered.
+     */
+    private static final ClassValue<AtomicReference<List<String>>> librarySearchPaths = new ClassValue<>() {
+        @Override
+        protected AtomicReference<List<String>> computeValue(final Class<?> type) {
+            return new AtomicReference<>();
+        }
+    };
+    /* @formatter:on */
 
     /**
      * A constant bootstrap for dynamic constants which resolves to a {@link VarHandle}
@@ -213,6 +231,50 @@ public final class Bootstraps {
         return base;
     }
 
+    /* @formatter:off */
+    /**
+     * Register library search paths for the caller's class.
+     * When the {@link #libraryLookup(MethodHandles.Lookup, String, Class, Arena, SymbolLookup) libraryLookup}
+     * bootstrap resolves a library for the caller's class, it will search these directories
+     * (in order) before falling back to the standard OS library search mechanism.
+     * <p>
+     * This method should typically be called from a {@code static} initializer block
+     * in the class that contains {@link Lib @Lib} annotations, before any native methods
+     * are invoked:
+     * <pre>{@code
+     * @Lib("z")
+     * class MyBindings {
+     *     static {
+     *         Bootstraps.setLibrarySearchPaths(MethodHandles.lookup(),
+     *                 "/opt/homebrew/lib", "/usr/local/lib");
+     *     }
+     *
+     *     @Link
+     *     private static native String zlibVersion();
+     * }
+     * }</pre>
+     * <p>
+     * Each path is treated as a directory.
+     * The library file name is computed via {@link System#mapLibraryName(String)}
+     * and resolved against each directory in turn.
+     * <p>
+     * The lookup must have {@linkplain MethodHandles.Lookup#hasFullPrivilegeAccess() full privilege access}
+     * to prevent unauthorized code from hijacking another class's library resolution.
+     *
+     * @param lookup the caller's lookup, used to identify the class and verify access (must not be {@code null})
+     * @param paths the directory paths to search, in order (must not be {@code null})
+     * @throws SecurityException if the lookup does not have full privilege access
+     */
+    /* @formatter:on */
+    public static void setLibrarySearchPaths(MethodHandles.Lookup lookup, String... paths) {
+        Assert.checkNotNullParam("lookup", lookup);
+        Assert.checkNotNullParam("paths", paths);
+        if (!lookup.hasFullPrivilegeAccess()) {
+            throw new SecurityException("Lookup must have full privilege access to set library search paths");
+        }
+        librarySearchPaths.get(lookup.lookupClass()).set(List.of(paths));
+    }
+
     /**
      * The empty symbol lookup.
      * Always returns an empty {@code Optional}.
@@ -286,9 +348,18 @@ public final class Bootstraps {
      * <p>
      * The returned symbol lookup will find symbols in the named library,
      * and also symbols in the given delegate symbol lookup.
+     * <p>
+     * If the {@code name} is an {@linkplain Path#isAbsolute() absolute path}, it is loaded directly
+     * without applying {@link System#mapLibraryName(String)} and without consulting registered
+     * {@linkplain #setLibrarySearchPaths(MethodHandles.Lookup, String...) search paths}.
+     * <p>
+     * Otherwise, if the caller's class has registered
+     * {@linkplain #setLibrarySearchPaths(MethodHandles.Lookup, String...) library search paths},
+     * each directory is tried in order (with the mapped library name) before falling back
+     * to the standard OS library search mechanism.
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
-     * @param name the library name (must not be {@code null} or empty)
+     * @param name the library name or absolute path (must not be {@code null} or empty)
      * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
      * @param arena the arena to use for the returned symbols (must not be {@code null})
      * @param next the next symbol lookup (must not be {@code null})
@@ -302,17 +373,56 @@ public final class Bootstraps {
         Assert.checkNotNullParam("name", name);
         Assert.checkNotEmptyParam("name", name);
         Assert.checkNotNullParam("arena", arena);
-        // use a method handle here so that we can call {@code libraryLookup} on behalf of the caller
-        MethodHandle loaderLookup;
+        // acquire a method handle for the Path-based overload so we can call it on behalf of the caller
+        MethodHandle pathLibLookup;
         try {
-            loaderLookup = lookup.findStatic(SymbolLookup.class, "libraryLookup",
+            pathLibLookup = lookup.findStatic(SymbolLookup.class, "libraryLookup",
+                    MethodType.methodType(SymbolLookup.class, Path.class, Arena.class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw toError(e);
+        }
+        // absolute path: load directly, skip name mapping and search paths
+        Path asPath = Path.of(name);
+        if (asPath.isAbsolute()) {
+            SymbolLookup symLookup;
+            try {
+                symLookup = (SymbolLookup) pathLibLookup.invokeExact(asPath, arena);
+            } catch (RuntimeException | Error e) {
+                throw e;
+            } catch (Throwable e) {
+                throw new UndeclaredThrowableException(e);
+            }
+            return symLookup.or(next);
+        }
+        // check for registered search paths on the caller's class
+        String mappedName = System.mapLibraryName(name);
+        List<String> searchPaths = librarySearchPaths.get(lookup.lookupClass()).get();
+        if (searchPaths != null) {
+            for (String dir : searchPaths) {
+                Path libPath = Path.of(dir).resolve(mappedName);
+                try {
+                    SymbolLookup symLookup = (SymbolLookup) pathLibLookup.invokeExact(libPath, arena);
+                    return symLookup.or(next);
+                } catch (IllegalArgumentException ignored) {
+                    // library not loadable from this path; try next
+                } catch (RuntimeException | Error e) {
+                    throw e;
+                } catch (Throwable e) {
+                    throw new UndeclaredThrowableException(e);
+                }
+            }
+        }
+        // fall back to the standard OS library search mechanism
+        MethodHandle stringLibLookup;
+        try {
+            stringLibLookup = lookup.findStatic(SymbolLookup.class, "libraryLookup",
                     MethodType.methodType(SymbolLookup.class, String.class, Arena.class));
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw toError(e);
         }
         SymbolLookup symLookup;
         try {
-            symLookup = (SymbolLookup) loaderLookup.invokeExact(System.mapLibraryName(name), arena);
+            symLookup = (SymbolLookup) stringLibLookup.invokeExact(mappedName, arena);
         } catch (RuntimeException | Error e) {
             throw e;
         } catch (Throwable e) {
