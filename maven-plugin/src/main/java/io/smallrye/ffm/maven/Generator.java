@@ -410,6 +410,12 @@ public final class Generator {
                         steps.add(new SegmentArgumentStep(compilers, slot, in, out));
                     }
                 }
+                case "[Ljava/lang/foreign/MemorySegment;" -> {
+                    if (compilers.allocatorStep == null) {
+                        compilers.allocatorStep = new OnDemandArenaStep();
+                    }
+                    steps.add(new SegmentArrayArgumentCopyStep(compilers, slot, in, out));
+                }
                 case "Ljava/lang/String;" -> {
                     if (compilers.allocatorStep == null || compilers.allocatorStep instanceof OnDemandArenaStep) {
                         compilers.allocatorStep = new AlwaysArenaStep();
@@ -575,6 +581,8 @@ public final class Generator {
     private static final ClassDesc CD_ValueLayout_OfLong = ClassDesc.of(ValueLayout.OfLong.class.getName());
     private static final ClassDesc CD_ValueLayout_OfShort = ClassDesc.of(ValueLayout.OfShort.class.getName());
     private static final ClassDesc CD_ValueLayout_OfBoolean = ClassDesc.of(ValueLayout.OfBoolean.class.getName());
+    private static final ClassDesc CD_AddressLayout = ClassDesc.of("java.lang.foreign.AddressLayout");
+    private static final ClassDesc CD_MemorySegmentArray = CD_MemorySegment.arrayType();
     private static final ClassDesc CD_WSALastErrorConsumer = ClassDesc.of("io.smallrye.ffm.WSALastErrorConsumer");
 
     private static final DirectMethodHandleDesc CD_Bootstraps_autoArena = ofConstantBootstrap(
@@ -1378,6 +1386,72 @@ public final class Generator {
                     b1.invokestatic(CD_MemorySegment, "copy",
                             MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_ValueLayout, CD_long, CD_Object, CD_int, CD_int),
                             true);
+                }
+            });
+        }
+    }
+
+    /**
+     * Step that marshals a {@code MemorySegment[]} parameter as a native array of pointers.
+     * Allocates a contiguous native segment of {@code ADDRESS}-sized slots and, depending on
+     * the {@code @In}/{@code @Out} annotations, copies addresses in before the call
+     * and/or reads them back after.
+     */
+    static class SegmentArrayArgumentCopyStep extends Step {
+        private final Compilers compilers;
+        private final int arraySlot;
+        private final boolean in;
+        private final boolean out;
+        private int segmentSlot;
+
+        private SegmentArrayArgumentCopyStep(final Compilers compilers, final int arraySlot,
+                final boolean in, final boolean out) {
+            this.compilers = compilers;
+            this.arraySlot = arraySlot;
+            this.in = in;
+            this.out = out;
+        }
+
+        void addParamDesc(final List<Step> steps, final int index, final StringBuilder sb) {
+            sb.append('*');
+            super.addParamDesc(steps, index, sb);
+        }
+
+        void addDowncallArgsDescs(final List<Step> steps, final int index, final List<ClassDesc> descs) {
+            descs.add(CD_MemorySegment);
+            super.addDowncallArgsDescs(steps, index, descs);
+        }
+
+        void call(final CodeBuilder b0, final List<Step> steps, final int index) {
+            b0.block(b1 -> {
+                compilers.allocatorStep.loadAllocator(b1);
+                if (in) {
+                    // Bootstraps.copySegmentArrayToNative(allocator, array)
+                    b1.aload(arraySlot);
+                    b1.invokestatic(CD_Bootstraps, "copySegmentArrayToNative",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_SegmentAllocator, CD_MemorySegmentArray));
+                } else {
+                    // out-only: allocator.allocate(ADDRESS, array.length)
+                    b1.getstatic(CD_ValueLayout, "ADDRESS", CD_AddressLayout);
+                    b1.aload(arraySlot);
+                    b1.arraylength();
+                    b1.i2l();
+                    b1.invokeinterface(CD_SegmentAllocator, "allocate",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_MemoryLayout, CD_long));
+                }
+                segmentSlot = b1.allocateLocal(TypeKind.REFERENCE);
+                b1.localVariable(segmentSlot, "segment" + arraySlot, CD_MemorySegment, b1.newBoundLabel(), b1.endLabel());
+                b1.dup();
+                b1.astore(segmentSlot);
+                // make the call
+                super.call(b1, steps, index);
+                // copy addresses back if needed
+                if (out) {
+                    // Bootstraps.copySegmentArrayFromNative(segment, array)
+                    b1.aload(segmentSlot);
+                    b1.aload(arraySlot);
+                    b1.invokestatic(CD_Bootstraps, "copySegmentArrayFromNative",
+                            MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_MemorySegmentArray));
                 }
             });
         }
