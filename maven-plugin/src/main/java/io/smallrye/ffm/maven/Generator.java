@@ -629,7 +629,7 @@ public final class Generator {
             CD_SymbolLookup);
     private static final DirectMethodHandleDesc CD_Bootstraps_loaderLookup = ofConstantBootstrap(
             CD_Bootstraps,
-            "defaultLookup",
+            "loaderLookup",
             CD_SymbolLookup,
             CD_SymbolLookup);
 
