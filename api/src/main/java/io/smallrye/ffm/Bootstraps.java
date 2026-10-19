@@ -432,6 +432,25 @@ public final class Bootstraps {
     }
 
     /**
+     * Dynamic constant bootstrap which produces the {@link SymbolLookup} for the named library with an automatic arena.
+     * This is the same as {@link #libraryLookup(MethodHandles.Lookup, String, Class, Arena, SymbolLookup)},
+     * except that the library name is given as a static argument, so that it may contain characters
+     * which are not valid in the name of a dynamic constant, such as the {@code /} of an absolute path.
+     *
+     * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
+     * @param ignored the constant name, provided by the JVM (ignored)
+     * @param type {@code SymbolLookup.class}, provided by the JVM (must not be {@code null})
+     * @param name the library name or absolute path (must not be {@code null} or empty)
+     * @param arena the arena to use for the returned symbols (must not be {@code null})
+     * @param next the next symbol lookup (must not be {@code null})
+     * @return the symbol lookup (not {@code null})
+     */
+    public static SymbolLookup libraryLookup(MethodHandles.Lookup lookup, String ignored, Class<SymbolLookup> type,
+            String name, Arena arena, SymbolLookup next) {
+        return libraryLookup(lookup, name, type, arena, next);
+    }
+
+    /**
      * An invoke-dynamic bootstrap which links a symbol and returns its address as a constant.
      * If the symbol is not found, every invocation will throw an {@link UnsatisfiedLinkError}.
      *
