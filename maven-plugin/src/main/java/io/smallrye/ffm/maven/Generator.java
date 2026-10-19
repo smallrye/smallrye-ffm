@@ -620,6 +620,7 @@ public final class Generator {
             CD_Bootstraps,
             "libraryLookup",
             CD_SymbolLookup,
+            CD_String,
             CD_Arena,
             CD_SymbolLookup);
     private static final DirectMethodHandleDesc CD_Bootstraps_linkSymbol = ofCallsiteBootstrap(
@@ -772,8 +773,9 @@ public final class Generator {
                         next);
                 default -> DynamicConstantDesc.ofNamed(
                         CD_Bootstraps_libraryLookup,
-                        val,
+                        "_",
                         CD_SymbolLookup,
+                        val,
                         DCD_Bootstraps_autoArena,
                         next);
             };
