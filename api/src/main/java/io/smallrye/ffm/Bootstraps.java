@@ -469,7 +469,7 @@ public final class Bootstraps {
      * <p>
      * The descriptor string is structured as follows:
      * <pre><code>
-    descriptor := flag* '(' type* ')' retType
+    descriptor := flag* '(' type* ('~' type*)? ')' retType
 
     flag := 'e' | 'E' | 'W' | 'r' | 'R'
 
@@ -488,6 +488,9 @@ public final class Bootstraps {
      * <li>{@code R} - indicate that the call is {@linkplain Linker.Option#critical(boolean) critical} and may access the Java
      * heap directly
      * </ul>
+     * A {@code ~} between two types marks the start of the variadic arguments of a
+     * {@linkplain Linker.Option#firstVariadicArg(int) variadic} function; at the end of the type list it marks a
+     * variadic function called with no variadic arguments.
      * The following descriptor type sequences are recognized:
      * <ul>
      * <li>{@code uB} - unsigned {@code byte} (one byte)</li>
@@ -548,7 +551,8 @@ public final class Bootstraps {
                                 argCount++;
                             }
                             case 'c', '*', 'Z', 'F', 'D' -> argCount++;
-                            case '.' -> variadic = argCount;
+                            // argCount includes the function pointer, which has no layout
+                            case '~' -> variadic = argCount - 1;
                             case ')' -> {
                                 for (h++; h < nameLen; h++) {
                                     switch (descStr.charAt(h)) {
@@ -641,7 +645,7 @@ public final class Bootstraps {
         boolean hasParamConv = false;
         for (int k = argStart; k < nameLen;) {
             switch (descStr.charAt(k)) {
-                case '.' -> {
+                case '~' -> {
                     // marker, not an argument
                     isVar = true;
                     k++;

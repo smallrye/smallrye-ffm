@@ -109,6 +109,15 @@ public final class BootstrapsTest {
     }
 
     @Test
+    public void testDowncallVariadic() throws Throwable {
+        assumeTrue(BootstrapsTest.class.getModule().isNativeAccessEnabled());
+        // the marker sits after the last fixed argument; here no variadic arguments are passed
+        MethodType expectedType = MethodType.methodType(int.class, MemorySegment.class, MemorySegment.class, int.class);
+        CallSite cs = Bootstraps.downcall(lookup(), "(*sI~)sI", expectedType);
+        assertEquals(expectedType, cs.getTarget().type());
+    }
+
+    @Test
     public void testLinkFailure() throws Throwable {
         assumeTrue(BootstrapsTest.class.getModule().isNativeAccessEnabled());
         assertThrows(UnsatisfiedLinkError.class, BootstrapsTest::non_existing_function);

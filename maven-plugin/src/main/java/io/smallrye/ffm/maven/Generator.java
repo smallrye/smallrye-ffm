@@ -388,6 +388,9 @@ public final class Generator {
             if (!in && !out) {
                 in = out = true;
             }
+            if (variadic == i) {
+                steps.add(new VariadicMarkerStep());
+            }
             // now examine the parameter itself
             switch (mtd.parameterType(i).descriptorString()) {
                 case "[B", "[C", "[D", "[F", "[I", "[J", "[S" -> {
@@ -451,6 +454,9 @@ public final class Generator {
                 default -> steps.add(new SimpleArgumentStep(mtd.parameterType(i), asType, slot));
             }
             slot += TypeKind.from(mtd.parameterType(i)).slotSize();
+        }
+        if (variadic == -2) {
+            steps.add(new VariadicMarkerStep());
         }
         if (compilers.captureStep != null) {
             if (compilers.allocatorStep == null) {
@@ -866,6 +872,19 @@ public final class Generator {
         void setUpDesc(final List<Step> steps, final int index, final StringBuilder sb) {
             sb.append(heap ? 'R' : 'r');
             super.setUpDesc(steps, index, sb);
+        }
+    }
+
+    /**
+     * Marks the start of the variadic arguments in the downcall descriptor; it contributes no argument of its own.
+     */
+    static final class VariadicMarkerStep extends Step {
+        VariadicMarkerStep() {
+        }
+
+        void addParamDesc(final List<Step> steps, final int index, final StringBuilder sb) {
+            sb.append('~');
+            super.addParamDesc(steps, index, sb);
         }
     }
 
