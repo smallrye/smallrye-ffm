@@ -1573,6 +1573,11 @@ public final class Bootstraps {
         return val;
     }
 
+    @SuppressWarnings("unused")
+    private static boolean b2z(byte val) {
+        return val != 0;
+    }
+
     // short to...
 
     @SuppressWarnings("unused")
@@ -1603,6 +1608,16 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static double s2d(short val) {
         return val;
+    }
+
+    @SuppressWarnings("unused")
+    private static byte s2b(short val) {
+        return (byte) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static boolean s2z(short val) {
+        return val != 0;
     }
 
     // char to...
@@ -1642,6 +1657,11 @@ public final class Bootstraps {
         return val;
     }
 
+    @SuppressWarnings("unused")
+    private static boolean c2z(char val) {
+        return val != 0;
+    }
+
     // int to...
 
     @SuppressWarnings("unused")
@@ -1657,6 +1677,11 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static short i2s(int val) {
         return (short) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static char i2c(int val) {
+        return (char) val;
     }
 
     @SuppressWarnings("unused")
@@ -1724,6 +1749,38 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static boolean l2z(long val) {
         return val != 0;
+    }
+
+    // unsigned int to...
+
+    @SuppressWarnings("unused")
+    private static float ui2f(int val) {
+        return Integer.toUnsignedLong(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static double ui2d(int val) {
+        return Integer.toUnsignedLong(val);
+    }
+
+    // unsigned long to...
+
+    @SuppressWarnings("unused")
+    private static float ul2f(long val) {
+        if (val >= 0) {
+            return val;
+        }
+        // halve (keeping the low bit so rounding stays correct), convert, and double
+        return (float) ((val >>> 1) | (val & 1)) * 2.0f;
+    }
+
+    @SuppressWarnings("unused")
+    private static double ul2d(long val) {
+        if (val >= 0) {
+            return val;
+        }
+        // halve (keeping the low bit so rounding stays correct), convert, and double
+        return (double) ((val >>> 1) | (val & 1)) * 2.0;
     }
 
     // float to...
