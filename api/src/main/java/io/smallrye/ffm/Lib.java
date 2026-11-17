@@ -12,6 +12,9 @@ import java.lang.foreign.SymbolLookup;
 /**
  * Declare that the annotated type or method requires the named library or libraries to be loaded
  * and searched in the given order.
+ * A name is mapped to a library file name with {@link System#mapLibraryName(String)} (for example, {@code z} is
+ * {@code libz.so} on Linux), unless it is an absolute path or already a library file name
+ * (such as {@code libz.so.1}, {@code libz.1.dylib} or {@code zlib1.dll}).
  * A few special names are recognized:
  * <ul>
  * <li>{@code <<SYSTEM>>} - use the system default library lookup as returned by {@link Linker#defaultLookup()}</li>
