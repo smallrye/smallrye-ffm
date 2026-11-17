@@ -119,6 +119,9 @@ By default, this is the mapping of Java types to `AsType` constants:
 * `float` - `AsType.f32`
 * `double` - `AsType.f64`
 * `MemorySegment`, primitive arrays, and `String` - `AsType.ptr`
+* `@Out String[]` - `AsType.ptr`, to an array of `const char *` which the function fills in; each element is read back as a `String`, or `null` for a `NULL` pointer
+
+The plugin fails the build for a parameter or return type which it cannot map, such as `Object`, `List`, or an input `String[]`.
 
 ### `Errno` support
 
