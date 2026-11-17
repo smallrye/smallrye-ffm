@@ -43,6 +43,19 @@ import java.lang.foreign.SegmentAllocator;
  * If a parameter is given whose type is {@code Arena}, then that arena will be used
  * for any temporary allocations which may be needed to copy input or output values.
  * This parameter is not propagated to the native method.
+ * <h2>Copied arguments</h2>
+ * A primitive array, a {@link MemorySegment} which is not {@linkplain MemorySegment#isNative() native}
+ * (a heap segment), and a {@link String} are copied into native memory for the call,
+ * and arrays and heap segments are copied back after the call unless they are annotated {@link In @In}.
+ * The copy is allocated from a confined arena which is closed when the method returns,
+ * or from the {@code Arena} or {@code SegmentAllocator} parameter if there is one.
+ * So a native function which keeps the pointer after it returns (for example, one which reads
+ * a buffer later) must be given a native {@code MemorySegment} from an arena which lives as long as
+ * the native code uses it, or such an arena parameter; with a temporary copy it would later read
+ * memory which has been freed and reused.
+ * A {@code MemorySegment} which is already native is passed as it is.
+ * With {@link Critical @Critical(heap = true)}, arrays and heap segments are passed without a copy,
+ * and the pointer is only valid during the call.
  * <h2>{@code errno} handling</h2>
  * If a parameter is given whose type is {@code ErrnoConsumer}, then the value
  * of {@code errno} will be propagated to that consumer before the method returns.

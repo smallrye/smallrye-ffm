@@ -120,6 +120,31 @@ By default, this is the mapping of Java types to `AsType` constants:
 * `double` - `AsType.f64`
 * `MemorySegment`, primitive arrays, and `String` - `AsType.ptr`
 
+### Arrays, heap segments, and strings
+
+Primitive arrays, heap `MemorySegment`s (those which are not native), and `String`s are copied into native memory
+for the duration of the call, and arrays and heap segments are copied back after it unless they are annotated `@In`.
+The copy is allocated from a confined arena which is closed when the method returns,
+or from the `Arena` or `SegmentAllocator` parameter of the method if it has one.
+
+So when a native function keeps a pointer after it returns, such as a buffer which it reads later,
+pass a native `MemorySegment` from an arena which lives as long as the native code uses the pointer
+(or give the method an `Arena` parameter), not an array:
+
+```java
+// libvips decodes the image from the buffer later, so the buffer must outlive the call
+@Link
+private static native MemorySegment vips_image_new_from_buffer(MemorySegment buf, @As(size_t) long len,
+        String options, @Variadic MemorySegment end);
+
+MemorySegment buf = imageArena.allocateFrom(ValueLayout.JAVA_BYTE, jpeg);
+MemorySegment image = vips_image_new_from_buffer(buf, buf.byteSize(), "", MemorySegment.NULL);
+```
+
+A native `MemorySegment` is passed as it is.
+With `@Critical(heap = true)`, arrays and heap segments are passed without a copy, and the pointer is only valid
+during the call.
+
 ### `Errno` support
 
 SmallRye FFM includes an enumeration called `Errno` which can be used as an integer argument or return type.
