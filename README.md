@@ -120,6 +120,27 @@ By default, this is the mapping of Java types to `AsType` constants:
 * `double` - `AsType.f64`
 * `MemorySegment`, primitive arrays, and `String` - `AsType.ptr`
 
+### Upcalls
+
+Some C functions take a function pointer and call it back, for example the comparator of `qsort` or a logging callback.
+To give native code a pointer to a Java method, declare a `static native` method that takes an `Arena`,
+returns `MemorySegment` and carries the `@Upcall` annotation with the name of a `static` method of the same class.
+
+```java
+@Upcall("compareInts")
+private static native MemorySegment compareIntsStub(Arena arena);
+
+private static int compareInts(MemorySegment a, MemorySegment b) {
+    return Integer.compare(a.reinterpret(4).get(JAVA_INT, 0), b.reinterpret(4).get(JAVA_INT, 0));
+}
+```
+
+Each call returns a new function pointer, valid while the arena is alive.
+The parameters and the return value of the target follow the same rules as for `@Link`, including `@As`.
+A `String` parameter receives a copy of the native string.
+If the target throws, the exception goes to the uncaught exception handler of the thread,
+and the function returns zero to native code instead of terminating the JVM.
+
 ### `Errno` support
 
 SmallRye FFM includes an enumeration called `Errno` which can be used as an integer argument or return type.

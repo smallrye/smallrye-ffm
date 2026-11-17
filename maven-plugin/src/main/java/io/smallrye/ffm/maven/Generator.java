@@ -162,6 +162,7 @@ public final class Generator {
         boolean heap = false;
         boolean link = false;
         boolean dispatch = false;
+        String upcallTarget = null;
         String outputCharset = null;
         String name = mm.methodName().stringValue();
         ClassDesc returnType = mm.methodTypeSymbol().returnType();
@@ -181,6 +182,14 @@ public final class Generator {
                     }
                     case "Lio/smallrye/ffm/Dispatch;" ->
                         dispatch = true;
+                    case "Lio/smallrye/ffm/Upcall;" -> {
+                        for (AnnotationElement element : annotation.elements()) {
+                            if (element.name().equalsString("value")
+                                    && element.value() instanceof AnnotationValue.OfString os) {
+                                upcallTarget = os.stringValue();
+                            }
+                        }
+                    }
                     case "Lio/smallrye/ffm/Link;" -> {
                         link = true;
                         for (AnnotationElement element : annotation.elements()) {
@@ -237,6 +246,13 @@ public final class Generator {
         }
         if (link && dispatch) {
             throw new IllegalArgumentException("Cannot provide both @Link and @Dispatch to the same member");
+        }
+        if (upcallTarget != null) {
+            if (link || dispatch) {
+                throw new IllegalArgumentException("Cannot combine @Upcall with @Link or @Dispatch on the same member");
+            }
+            processUpcallMethod(mm, cm, zb, upcallTarget);
+            return true;
         }
         if (!(link || dispatch)) {
             return false;
@@ -510,6 +526,107 @@ public final class Generator {
         return true;
     }
 
+    /**
+     * Replace the body of an {@link io.smallrye.ffm.Upcall @Upcall} method with a call site which creates the stub.
+     */
+    private static void processUpcallMethod(MethodModel mm, ClassModel cm, ClassBuilder zb, String targetName) {
+        String memberName = mm.methodName().stringValue();
+        if (!mm.flags().has(AccessFlag.STATIC)) {
+            throw new IllegalArgumentException("@Upcall method " + memberName + " must be static");
+        }
+        if (!mm.methodTypeSymbol().equals(MethodTypeDesc.of(CD_MemorySegment, CD_Arena))) {
+            throw new IllegalArgumentException("@Upcall method " + memberName
+                    + " must take a single Arena and return MemorySegment");
+        }
+        List<MethodModel> targets = cm.methods().stream()
+                .filter(m -> m.methodName().equalsString(targetName))
+                .toList();
+        if (targets.size() != 1) {
+            throw new IllegalArgumentException("@Upcall method " + memberName + " needs exactly one method named "
+                    + targetName + " in the same class, found " + targets.size());
+        }
+        MethodModel target = targets.getFirst();
+        if (!target.flags().has(AccessFlag.STATIC) || target.flags().has(AccessFlag.NATIVE)) {
+            throw new IllegalArgumentException("The @Upcall target " + targetName + " must be a static Java method");
+        }
+        MethodTypeDesc ttd = target.methodTypeSymbol();
+        int paramCnt = ttd.parameterCount();
+        List<List<Annotation>> paListList = target
+                .findAttribute(Attributes.runtimeInvisibleParameterAnnotations())
+                .map(RuntimeInvisibleParameterAnnotationsAttribute::parameterAnnotations)
+                .orElse(Collections.nCopies(paramCnt, List.of()));
+        int annOffs = paramCnt - paListList.size();
+        StringBuilder desc = new StringBuilder("(");
+        for (int i = 0; i < paramCnt; i++) {
+            ClassDesc paramType = ttd.parameterType(i);
+            checkUpcallType(paramType, targetName);
+            String asType = defaultAsType(paramType);
+            for (Annotation annotation : i < annOffs ? List.<Annotation> of() : paListList.get(i)) {
+                if (annotation.className().equalsString("Lio/smallrye/ffm/As;")) {
+                    asType = readAsAnnotation(annotation, asType);
+                }
+            }
+            desc.append(asTypeToDesc(asType));
+        }
+        desc.append(')');
+        ClassDesc returnType = ttd.returnType();
+        if (returnType.descriptorString().equals("V")) {
+            desc.append('V');
+        } else {
+            if (returnType.descriptorString().equals("Ljava/lang/String;")) {
+                throw new IllegalArgumentException("The @Upcall target " + targetName + " cannot return String");
+            }
+            checkUpcallType(returnType, targetName);
+            String asType = defaultAsType(returnType);
+            Optional<RuntimeInvisibleAnnotationsAttribute> tria = target
+                    .findAttribute(Attributes.runtimeInvisibleAnnotations());
+            if (tria.isPresent()) {
+                for (Annotation annotation : tria.get().annotations()) {
+                    if (annotation.className().equalsString("Lio/smallrye/ffm/As;")) {
+                        asType = readAsAnnotation(annotation, asType);
+                    }
+                }
+            }
+            desc.append(asTypeToDesc(asType));
+        }
+        ClassDesc owner = cm.thisClass().asSymbol();
+        DirectMethodHandleDesc targetHandle = MethodHandleDesc.ofMethod(
+                cm.flags().has(AccessFlag.INTERFACE) ? DirectMethodHandleDesc.Kind.INTERFACE_STATIC
+                        : DirectMethodHandleDesc.Kind.STATIC,
+                owner, targetName, ttd);
+        zb.withMethod(mm.methodName().stringValue(), mm.methodTypeSymbol(), mm.flags().flagsMask() & ~ACC_NATIVE, mb -> {
+            for (MethodElement me : mm.elementList()) {
+                if (!(me instanceof AccessFlags || me instanceof CodeElement)) {
+                    mb.with(me);
+                }
+            }
+            mb.withCode(cb -> {
+                cb.aload(0);
+                cb.invokedynamic(DynamicCallSiteDesc.of(CD_Bootstraps_upcall, desc.toString(),
+                        MethodTypeDesc.of(CD_MemorySegment, CD_Arena), targetHandle));
+                cb.areturn();
+            });
+        });
+    }
+
+    private static void checkUpcallType(ClassDesc type, String targetName) {
+        switch (type.descriptorString()) {
+            case "Z", "B", "C", "S", "I", "J", "F", "D", "Ljava/lang/foreign/MemorySegment;", "Ljava/lang/String;" -> {
+            }
+            default -> throw new IllegalArgumentException("The @Upcall target " + targetName
+                    + " uses " + type.displayName() + ", but only primitive types, MemorySegment and String are supported");
+        }
+    }
+
+    private static String readAsAnnotation(Annotation annotation, String defaultValue) {
+        for (AnnotationElement element : annotation.elements()) {
+            if (element.name().equalsString("value") && element.value() instanceof AnnotationValue.OfEnum oe) {
+                return oe.constantName().stringValue();
+            }
+        }
+        return defaultValue;
+    }
+
     private static List<String> readLibAnnotation(final Annotation annotation) {
         String val = null;
         for (AnnotationElement element : annotation.elements()) {
@@ -612,6 +729,11 @@ public final class Generator {
             CD_Bootstraps,
             "downcall",
             CD_CallSite);
+    private static final DirectMethodHandleDesc CD_Bootstraps_upcall = ofCallsiteBootstrap(
+            CD_Bootstraps,
+            "upcall",
+            CD_CallSite,
+            CD_MethodHandle);
     private static final DirectMethodHandleDesc CD_Bootstraps_emptySymbolLookup = ofConstantBootstrap(
             CD_Bootstraps,
             "emptySymbolLookup",
