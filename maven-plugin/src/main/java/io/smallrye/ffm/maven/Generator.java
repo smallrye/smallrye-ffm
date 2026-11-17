@@ -1314,21 +1314,27 @@ public final class Generator {
         }
 
         void call(final CodeBuilder cb, final List<Step> steps, final int index) {
-            this.compilers.allocatorStep.loadAllocator(cb);
             cb.aload(slot);
-            //    default MemorySegment allocateFrom(String str) {
-            //    default MemorySegment allocateFrom(String str, Charset charset) {
-            if (charset == null || charset.equalsIgnoreCase("utf-8") || charset.equalsIgnoreCase("utf_8")) {
-                cb.invokeinterface(CD_SegmentAllocator, "allocateFrom", MethodTypeDesc.of(CD_MemorySegment, CD_String));
-            } else {
-                cb.loadConstant(
-                        DynamicConstantDesc.ofNamed(
-                                CD_Bootstraps_charset,
-                                charset,
-                                CD_Charset));
-                cb.invokeinterface(CD_SegmentAllocator, "allocateFrom",
-                        MethodTypeDesc.of(CD_MemorySegment, CD_String, CD_Charset));
-            }
+            cb.ifThenElse(Opcode.IFNONNULL, b1 -> {
+                this.compilers.allocatorStep.loadAllocator(b1);
+                b1.aload(slot);
+                //    default MemorySegment allocateFrom(String str) {
+                //    default MemorySegment allocateFrom(String str, Charset charset) {
+                if (charset == null || charset.equalsIgnoreCase("utf-8") || charset.equalsIgnoreCase("utf_8")) {
+                    b1.invokeinterface(CD_SegmentAllocator, "allocateFrom", MethodTypeDesc.of(CD_MemorySegment, CD_String));
+                } else {
+                    b1.loadConstant(
+                            DynamicConstantDesc.ofNamed(
+                                    CD_Bootstraps_charset,
+                                    charset,
+                                    CD_Charset));
+                    b1.invokeinterface(CD_SegmentAllocator, "allocateFrom",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_String, CD_Charset));
+                }
+            }, b1 -> {
+                // a null string is passed as NULL
+                b1.getstatic(CD_MemorySegment, "NULL", CD_MemorySegment);
+            });
             int strBuf = cb.allocateLocal(TypeKind.REFERENCE);
             cb.astore(strBuf);
             cb.localVariable(strBuf, "strBuf" + slot, CD_MemorySegment, cb.newBoundLabel(), cb.endLabel());
@@ -1503,20 +1509,30 @@ public final class Generator {
 
         void call(final CodeBuilder cb, final List<Step> steps, final int index) {
             super.call(cb, steps, index);
-            // assume a max byte length of 1024
-            cb.loadConstant(1024L);
-            cb.invokeinterface(CD_MemorySegment, "reinterpret", MethodTypeDesc.of(CD_MemorySegment, CD_long));
+            cb.dup();
+            cb.invokeinterface(CD_MemorySegment, "address", MethodTypeDesc.of(CD_long));
             cb.lconst_0();
-            if (charset == null) {
-                cb.invokeinterface(CD_MemorySegment, "getString", MethodTypeDesc.of(CD_String, CD_long));
-            } else {
-                cb.loadConstant(
-                        DynamicConstantDesc.ofNamed(
-                                CD_Bootstraps_charset,
-                                charset,
-                                CD_Charset));
-                cb.invokeinterface(CD_MemorySegment, "getString", MethodTypeDesc.of(CD_String, CD_long, CD_Charset));
-            }
+            cb.lcmp();
+            cb.ifThenElse(Opcode.IFNE, b1 -> {
+                // read up to the terminator, whatever the length
+                b1.loadConstant(Long.MAX_VALUE);
+                b1.invokeinterface(CD_MemorySegment, "reinterpret", MethodTypeDesc.of(CD_MemorySegment, CD_long));
+                b1.lconst_0();
+                if (charset == null) {
+                    b1.invokeinterface(CD_MemorySegment, "getString", MethodTypeDesc.of(CD_String, CD_long));
+                } else {
+                    b1.loadConstant(
+                            DynamicConstantDesc.ofNamed(
+                                    CD_Bootstraps_charset,
+                                    charset,
+                                    CD_Charset));
+                    b1.invokeinterface(CD_MemorySegment, "getString", MethodTypeDesc.of(CD_String, CD_long, CD_Charset));
+                }
+            }, b1 -> {
+                // a NULL result is returned as null
+                b1.pop();
+                b1.aconst_null();
+            });
         }
     }
 }
