@@ -750,6 +750,97 @@ public final class Bootstraps {
     }
 
     /**
+     * A call site bootstrap for the method annotated with {@link Upcall @Upcall}.
+     * The call site takes an {@code Arena} and returns a new upcall stub for the target, allocated in that arena.
+     *
+     * @param lookup the lookup (must not be {@code null})
+     * @param descStr the upcall descriptor: the parameter and return types of the target, in the downcall format
+     * @param type the call site type (must be {@code (Arena)MemorySegment})
+     * @param target the method which the stub calls (must not be {@code null})
+     * @return the call site (not {@code null})
+     */
+    public static CallSite upcall(MethodHandles.Lookup lookup, String descStr, MethodType type, MethodHandle target) {
+        if (!type.equals(MethodType.methodType(MemorySegment.class, Arena.class))) {
+            throw wrongType();
+        }
+        if (descStr.isEmpty() || descStr.charAt(0) != '(') {
+            throw invalidDesc(descStr);
+        }
+        MethodType targetType = target.type();
+        List<MemoryLayout> layouts = new ArrayList<>();
+        MethodHandle adapted = target;
+        int param = 0;
+        int h = 1;
+        int len = descStr.length();
+        // the parameters: convert each native value to the type of the target parameter
+        while (h < len && descStr.charAt(h) != ')') {
+            if (param >= targetType.parameterCount()) {
+                throw invalidDesc(descStr);
+            }
+            Class<?> paramType = targetType.parameterType(param);
+            layouts.add(layoutOf(descStr, h, false));
+            MethodHandle conv = paramType == String.class && descStr.charAt(h) == '*'
+                    ? staticMethod(Bootstraps.class, "p2str", "(Ljava/lang/foreign/MemorySegment;)Ljava/lang/String;", false)
+                    : outputConvOf(descStr, h, paramType);
+            if (conv != null) {
+                adapted = filterArguments(adapted, param, conv);
+            }
+            param++;
+            h += charCount(descStr, h);
+        }
+        if (h >= len || param != targetType.parameterCount()) {
+            throw invalidDesc(descStr);
+        }
+        h++;
+        // the return value: convert the value of the target to the native type
+        FunctionDescriptor fd;
+        if (descStr.charAt(h) == 'V') {
+            fd = FunctionDescriptor.ofVoid(layouts.toArray(MemoryLayout[]::new));
+        } else {
+            fd = FunctionDescriptor.of(layoutOf(descStr, h, false), layouts.toArray(MemoryLayout[]::new));
+            MethodHandle conv = inputConvOf(descStr, h, targetType.returnType(), false);
+            if (conv != null) {
+                adapted = filterReturnValue(adapted, conv);
+            }
+        }
+        adapted = adapted.asType(fd.toMethodType());
+        // an exception must not escape to native code, which would terminate the JVM
+        MethodHandle onFailure = collectArguments(zero(adapted.type().returnType()), 0,
+                staticMethod(Bootstraps.class, "reportUpcallFailure", "(Ljava/lang/Throwable;)V", false));
+        onFailure = dropArguments(onFailure, 1, adapted.type().parameterList());
+        adapted = catchException(adapted, Throwable.class, onFailure);
+        MethodHandle stub;
+        try {
+            stub = lookup().findVirtual(Linker.class, "upcallStub", MethodType.methodType(MemorySegment.class,
+                    MethodHandle.class, FunctionDescriptor.class, Arena.class, Linker.Option[].class));
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw toError(e);
+        }
+        stub = stub.bindTo(Linker.nativeLinker());
+        stub = insertArguments(stub, 0, adapted, fd);
+        stub = insertArguments(stub, 1, (Object) new Linker.Option[0]);
+        return new ConstantCallSite(stub.asType(type));
+    }
+
+    @SuppressWarnings("unused")
+    private static String p2str(MemorySegment val) {
+        if (val == null || val.equals(MemorySegment.NULL)) {
+            return null;
+        }
+        return val.reinterpret(Long.MAX_VALUE).getString(0);
+    }
+
+    @SuppressWarnings("unused")
+    private static void reportUpcallFailure(Throwable t) {
+        Thread thread = Thread.currentThread();
+        try {
+            thread.getUncaughtExceptionHandler().uncaughtException(thread, t);
+        } catch (Throwable ignored) {
+            // nothing may escape to native code
+        }
+    }
+
+    /**
      * A constant bootstrap which returns an {@linkplain Arena#ofAuto automatic arena}.
      * The arena is garbage-collected with the class containing it.
      *
