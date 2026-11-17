@@ -353,9 +353,13 @@ public final class Bootstraps {
      * without applying {@link System#mapLibraryName(String)} and without consulting registered
      * {@linkplain #setLibrarySearchPaths(MethodHandles.Lookup, String...) search paths}.
      * <p>
+     * If the {@code name} is already a library file name, that is, if it ends with {@code .so}, {@code .dylib}
+     * or {@code .dll}, or contains {@code .so.} (a versioned shared library such as {@code libz.so.1}),
+     * it is used as given instead of the result of {@link System#mapLibraryName(String)}.
+     * <p>
      * Otherwise, if the caller's class has registered
      * {@linkplain #setLibrarySearchPaths(MethodHandles.Lookup, String...) library search paths},
-     * each directory is tried in order (with the mapped library name) before falling back
+     * each directory is tried in order (with the library file name) before falling back
      * to the standard OS library search mechanism.
      *
      * @param lookup the caller lookup, provided by the JVM (must not be {@code null})
@@ -395,7 +399,7 @@ public final class Bootstraps {
             return symLookup.or(next);
         }
         // check for registered search paths on the caller's class
-        String mappedName = System.mapLibraryName(name);
+        String mappedName = isLibraryFileName(name) ? name : System.mapLibraryName(name);
         List<String> searchPaths = librarySearchPaths.get(lookup.lookupClass()).get();
         if (searchPaths != null) {
             for (String dir : searchPaths) {
@@ -429,6 +433,10 @@ public final class Bootstraps {
             throw new UndeclaredThrowableException(e);
         }
         return symLookup.or(next);
+    }
+
+    private static boolean isLibraryFileName(String name) {
+        return name.endsWith(".so") || name.contains(".so.") || name.endsWith(".dylib") || name.endsWith(".dll");
     }
 
     /**
