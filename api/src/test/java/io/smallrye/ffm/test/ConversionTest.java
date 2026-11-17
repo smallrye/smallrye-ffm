@@ -148,6 +148,8 @@ public final class ConversionTest {
             0, 1, 12345, Long.MAX_VALUE, Long.MIN_VALUE, -1,
             // values whose lowest bit decides the rounding
             0x8000_0000_0000_0401L, 0x8000_0000_0000_0400L, 0x8000_0080_0000_0001L, 0xffff_ffff_ffff_fbffL,
+            // values where rounding by adding a bias before the shift goes to the wrong side
+            0xffff_ff7f_ffff_fffdL, 0xffff_ffff_ffff_fc00L,
     };
 
     @Dispatch
