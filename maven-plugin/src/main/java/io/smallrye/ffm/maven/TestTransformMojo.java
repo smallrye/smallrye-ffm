@@ -18,6 +18,12 @@ public final class TestTransformMojo extends AbstractTransformMojo {
     private File classesDirectory;
 
     /**
+     * Skip the transformation of the test classes when the build skips the tests and their compilation.
+     */
+    @Parameter(defaultValue = "false", property = "maven.test.skip")
+    private boolean mavenTestSkip;
+
+    /**
      * Construct a new instance.
      */
     public TestTransformMojo() {
@@ -25,5 +31,10 @@ public final class TestTransformMojo extends AbstractTransformMojo {
 
     File classesDirectory() {
         return classesDirectory;
+    }
+
+    @Override
+    boolean skipped() {
+        return mavenTestSkip;
     }
 }
