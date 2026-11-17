@@ -735,7 +735,12 @@ public final class Bootstraps {
                 }
                 default -> {
                     MemoryLayout layout = layoutOf(descStr, k, isVar);
-                    MethodHandle conv = inputConvOf(descStr, k, type.parameterType(param), isVar);
+                    Class<?> paramType = type.parameterType(param);
+                    MethodHandle conv = inputConvOf(descStr, k, paramType, isVar);
+                    if (conv != null && conv.type().parameterType(0) != paramType) {
+                        // the conversion takes a supertype of the parameter type (e.g. NativeIntValued)
+                        conv = conv.asType(conv.type().changeParameterType(0, paramType));
+                    }
                     k += charCount(descStr, k);
                     if (conv != null) {
                         hasParamConv = true;
