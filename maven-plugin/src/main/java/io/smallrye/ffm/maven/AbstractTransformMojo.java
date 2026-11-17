@@ -27,6 +27,26 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     private boolean skip;
 
     /**
+     * The project group ID, used in the path of the generated native image metadata.
+     */
+    @Parameter(defaultValue = "${project.groupId}", readonly = true)
+    private String groupId;
+
+    /**
+     * The project artifact ID, used in the path of the generated native image metadata.
+     */
+    @Parameter(defaultValue = "${project.artifactId}", readonly = true)
+    private String artifactId;
+
+    /**
+     * Skip writing the GraalVM native image metadata
+     * ({@code META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json})
+     * which registers the downcalls linked by the transformed classes.
+     */
+    @Parameter(defaultValue = "false", property = "smallrye-ffm.skipNativeMetadata")
+    private boolean skipNativeMetadata;
+
+    /**
      * Construct a new instance.
      */
     AbstractTransformMojo() {
@@ -43,7 +63,20 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
             return;
         }
         getLog().info("Transforming classes in path: " + classes);
-        int cnt = processPath(classes);
+        NativeMetadata metadata = new NativeMetadata();
+        int cnt = processPath(classes, metadata);
+        if (!skipNativeMetadata) {
+            Path file = classes.resolve("META-INF").resolve("native-image").resolve(groupId).resolve(artifactId)
+                    .resolve("smallrye-ffm").resolve("reachability-metadata.json");
+            try {
+                metadata.write(file);
+            } catch (IOException e) {
+                throw new MojoFailureException("Failed to write " + file, e);
+            }
+            if (!metadata.downcalls().isEmpty()) {
+                getLog().info("Registered " + metadata.downcalls().size() + " downcall shapes for native image in " + file);
+            }
+        }
         switch (cnt) {
             case 0 -> getLog().info("No classes transformed");
             case 1 -> getLog().info("Transformed 1 class");
@@ -51,12 +84,12 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
         }
     }
 
-    private int processPath(final Path path) throws MojoFailureException {
+    private int processPath(final Path path, final NativeMetadata metadata) throws MojoFailureException {
         int cnt = 0;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
             for (Path file : ds) {
                 if (Files.isDirectory(file)) {
-                    cnt += processPath(file);
+                    cnt += processPath(file, metadata);
                 } else if (file.getFileName().toString().endsWith(".class")) {
                     ClassModel cm;
                     try {
@@ -74,11 +107,14 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
                     });
                     if (resHolder.res) {
                         cnt++;
+                        metadata.addClass(cf.parse(result));
                         try {
                             Files.write(file, result);
                         } catch (IOException e) {
                             throw new MojoFailureException("Failed to write " + file, e);
                         }
+                    } else {
+                        metadata.addClass(cm);
                     }
                 }
             }
