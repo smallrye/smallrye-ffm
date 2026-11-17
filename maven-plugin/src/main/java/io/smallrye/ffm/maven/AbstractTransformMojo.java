@@ -9,6 +9,7 @@ import java.nio.file.Path;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugin.MojoFailureException;
+import org.apache.maven.plugins.annotations.Parameter;
 
 import io.smallrye.classfile.ClassFile;
 import io.smallrye.classfile.ClassModel;
@@ -20,13 +21,27 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     private static final ClassFile cf = ClassFile.of(ClassFile.StackMapsOption.STACK_MAPS_WHEN_REQUIRED);
 
     /**
+     * Skip the transformation.
+     */
+    @Parameter(defaultValue = "false", property = "smallrye.ffm.skip")
+    private boolean skip;
+
+    /**
      * Construct a new instance.
      */
     AbstractTransformMojo() {
     }
 
     public void execute() throws MojoExecutionException, MojoFailureException {
+        if (skip || skipped()) {
+            getLog().info("Skipping the transformation");
+            return;
+        }
         Path classes = classesDirectory().toPath();
+        if (!Files.isDirectory(classes)) {
+            getLog().info("Nothing to transform: " + classes + " does not exist");
+            return;
+        }
         getLog().info("Transforming classes in path: " + classes);
         int cnt = processPath(classes);
         switch (cnt) {
@@ -74,4 +89,11 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     }
 
     abstract File classesDirectory();
+
+    /**
+     * {@return {@code true} if the goal has its own reason to skip, beyond the {@code skip} parameter}
+     */
+    boolean skipped() {
+        return false;
+    }
 }
