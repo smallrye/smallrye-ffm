@@ -11,7 +11,7 @@ import java.lang.foreign.Linker;
 import java.lang.foreign.MemorySegment;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.math.BigDecimal;
+import java.math.BigInteger;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -126,12 +126,12 @@ public final class ConversionTest {
         assertFalse(isdigit('x'));
     }
 
-    // float/double <- unsigned 64-bit
+    // float/double <- unsigned 64-bit, compared with the binary conversion of BigInteger, which rounds to nearest even
 
     @Test
     public void testU64ReturnAsDouble() {
         for (long v : U64_SAMPLES) {
-            assertEquals(new BigDecimal(Long.toUnsignedString(v)).doubleValue(), u64AsDouble(ID_LONG, v),
+            assertEquals(new BigInteger(Long.toUnsignedString(v)).doubleValue(), u64AsDouble(ID_LONG, v),
                     Long.toUnsignedString(v));
         }
     }
@@ -139,7 +139,7 @@ public final class ConversionTest {
     @Test
     public void testU64ReturnAsFloat() {
         for (long v : U64_SAMPLES) {
-            assertEquals(new BigDecimal(Long.toUnsignedString(v)).floatValue(), u64AsFloat(ID_LONG, v),
+            assertEquals(new BigInteger(Long.toUnsignedString(v)).floatValue(), u64AsFloat(ID_LONG, v),
                     Long.toUnsignedString(v));
         }
     }
