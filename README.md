@@ -123,7 +123,7 @@ By default, this is the mapping of Java types to `AsType` constants:
 ### Arrays, heap segments, and strings
 
 Primitive arrays, heap `MemorySegment`s (those which are not native), and `String`s are copied into native memory
-for the duration of the call, and arrays and heap segments are copied back after it unless they are annotated `@In`.
+for the duration of the call unless they are annotated with `@Out` but not `@In`, and arrays and heap segments are copied back after it unless they are annotated `@In` but not `@Out`.
 The copy is allocated from a confined arena which is closed when the method returns,
 or from the `Arena` or `SegmentAllocator` parameter of the method if it has one.
 

@@ -45,8 +45,10 @@ import java.lang.foreign.SegmentAllocator;
  * This parameter is not propagated to the native method.
  * <h2>Copied arguments</h2>
  * A primitive array, a {@link MemorySegment} which is not {@linkplain MemorySegment#isNative() native}
- * (a heap segment), and a {@link String} are copied into native memory for the call,
- * and arrays and heap segments are copied back after the call unless they are annotated {@link In @In}.
+ * (a heap segment), and a {@link String} are copied into native memory for the call
+ * unless they are annotated with {@link Out @Out} but not {@link In @In},
+ * and arrays and heap segments are copied back after the call
+ * unless they are annotated with {@link In @In} but not {@link Out @Out}.
  * The copy is allocated from a confined arena which is closed when the method returns,
  * or from the {@code Arena} or {@code SegmentAllocator} parameter if there is one.
  * So a native function which keeps the pointer after it returns (for example, one which reads
