@@ -425,15 +425,10 @@ public final class Generator {
                     steps.add(new SegmentArrayArgumentCopyStep(compilers, slot, in, out));
                 }
                 case "[Ljava/lang/String;" -> {
-                    if (in) {
-                        throw unsupportedParameter(cm, mm, i,
-                                "only @Out String[] (a const char ** out-parameter) is supported;"
-                                        + " pass a MemorySegment[] for an array of C strings");
-                    }
                     if (compilers.allocatorStep == null) {
                         compilers.allocatorStep = new OnDemandArenaStep();
                     }
-                    steps.add(new StringArrayOutStep(compilers, slot, charset));
+                    steps.add(new StringArrayArgumentStep(compilers, slot, charset, in, out));
                 }
                 case "Ljava/lang/String;" -> {
                     if (compilers.allocatorStep == null || compilers.allocatorStep instanceof OnDemandArenaStep) {
@@ -1556,19 +1551,26 @@ public final class Generator {
     }
 
     /**
-     * Step that marshals an {@code @Out String[]} parameter as a native array of {@code const char *}
-     * which the callee fills in.
-     * Each element is read back as a string, or {@code null} for a {@code NULL} pointer.
+     * Step that marshals a {@code String[]} parameter as a native array of {@code char *}.
+     * As input, each element is copied as a {@code NUL}-terminated string ({@code NULL} for {@code null}),
+     * and the array is followed by a {@code NULL} pointer; for {@code @Out} only, the array is zero-filled for the
+     * callee to fill in.
+     * As output, each element is read back as a string, or {@code null} for a {@code NULL} pointer.
      */
-    static class StringArrayOutStep extends Step {
+    static class StringArrayArgumentStep extends Step {
         private final Compilers compilers;
         private final int arraySlot;
         private final String charset;
+        private final boolean in;
+        private final boolean out;
 
-        private StringArrayOutStep(final Compilers compilers, final int arraySlot, final String charset) {
+        private StringArrayArgumentStep(final Compilers compilers, final int arraySlot, final String charset,
+                final boolean in, final boolean out) {
             this.compilers = compilers;
             this.arraySlot = arraySlot;
             this.charset = charset;
+            this.in = in;
+            this.out = out;
         }
 
         void addParamDesc(final List<Step> steps, final int index, final StringBuilder sb) {
@@ -1581,32 +1583,46 @@ public final class Generator {
             super.addDowncallArgsDescs(steps, index, descs);
         }
 
+        private void loadCharset(final CodeBuilder b) {
+            if (charset == null) {
+                b.getstatic(CD_StandardCharsets, "UTF_8", CD_Charset);
+            } else {
+                b.loadConstant(DynamicConstantDesc.ofNamed(CD_Bootstraps_charset, charset, CD_Charset));
+            }
+        }
+
         void call(final CodeBuilder b0, final List<Step> steps, final int index) {
             b0.block(b1 -> {
-                // allocator.allocate(ADDRESS, array.length) (zero-filled, so unset elements are NULL)
                 compilers.allocatorStep.loadAllocator(b1);
-                b1.getstatic(CD_ValueLayout, "ADDRESS", CD_AddressLayout);
-                b1.aload(arraySlot);
-                b1.arraylength();
-                b1.i2l();
-                b1.invokeinterface(CD_SegmentAllocator, "allocate",
-                        MethodTypeDesc.of(CD_MemorySegment, CD_MemoryLayout, CD_long));
+                if (in) {
+                    // Bootstraps.copyStringArrayToNative(allocator, array, charset)
+                    b1.aload(arraySlot);
+                    loadCharset(b1);
+                    b1.invokestatic(CD_Bootstraps, "copyStringArrayToNative",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_SegmentAllocator, CD_String.arrayType(), CD_Charset));
+                } else {
+                    // out-only: allocator.allocate(ADDRESS, array.length) (zero-filled, so unset elements are NULL)
+                    b1.getstatic(CD_ValueLayout, "ADDRESS", CD_AddressLayout);
+                    b1.aload(arraySlot);
+                    b1.arraylength();
+                    b1.i2l();
+                    b1.invokeinterface(CD_SegmentAllocator, "allocate",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_MemoryLayout, CD_long));
+                }
                 int segmentSlot = b1.allocateLocal(TypeKind.REFERENCE);
                 b1.localVariable(segmentSlot, "segment" + arraySlot, CD_MemorySegment, b1.newBoundLabel(), b1.endLabel());
                 b1.dup();
                 b1.astore(segmentSlot);
                 // make the call
                 super.call(b1, steps, index);
-                // Bootstraps.copyStringArrayFromNative(segment, array, charset)
-                b1.aload(segmentSlot);
-                b1.aload(arraySlot);
-                if (charset == null) {
-                    b1.getstatic(CD_StandardCharsets, "UTF_8", CD_Charset);
-                } else {
-                    b1.loadConstant(DynamicConstantDesc.ofNamed(CD_Bootstraps_charset, charset, CD_Charset));
+                if (out) {
+                    // Bootstraps.copyStringArrayFromNative(segment, array, charset)
+                    b1.aload(segmentSlot);
+                    b1.aload(arraySlot);
+                    loadCharset(b1);
+                    b1.invokestatic(CD_Bootstraps, "copyStringArrayFromNative",
+                            MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_String.arrayType(), CD_Charset));
                 }
-                b1.invokestatic(CD_Bootstraps, "copyStringArrayFromNative",
-                        MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_String.arrayType(), CD_Charset));
             });
         }
     }

@@ -30,6 +30,7 @@ import io.smallrye.classfile.attribute.RuntimeInvisibleParameterAnnotationsAttri
  */
 public final class UnsupportedTypeTest {
     private static final Annotation LINK = Annotation.of(ClassDesc.of("io.smallrye.ffm.Link"));
+    private static final Annotation IN = Annotation.of(ClassDesc.of("io.smallrye.ffm.In"));
     private static final Annotation OUT = Annotation.of(ClassDesc.of("io.smallrye.ffm.Out"));
 
     @TempDir
@@ -39,12 +40,24 @@ public final class UnsupportedTypeTest {
     }
 
     @Test
-    public void testStringArrayInputIsRejected() throws Exception {
+    public void testStringArrayInputIsAccepted() throws Exception {
         writeNative("strlenArray", MethodTypeDesc.of(CD_long, CD_String.arrayType()), List.of());
+        transform();
+    }
+
+    @Test
+    public void testStringArrayInOnlyIsAccepted() throws Exception {
+        writeNative("strlenArray", MethodTypeDesc.of(CD_long, CD_String.arrayType()), List.of(List.of(IN)));
+        transform();
+    }
+
+    @Test
+    public void testNestedStringArrayIsRejected() throws Exception {
+        writeNative("takesStrings", MethodTypeDesc.of(CD_void, CD_String.arrayType(2)), List.of());
         MojoFailureException e = assertThrows(MojoFailureException.class, this::transform);
-        assertTrue(e.getMessage().contains("org.example.Natives.strlenArray"), e.getMessage());
+        assertTrue(e.getMessage().contains("org.example.Natives.takesStrings"), e.getMessage());
         assertTrue(e.getMessage().contains("parameter 0 (p0)"), e.getMessage());
-        assertTrue(e.getMessage().contains("java.lang.String[]"), e.getMessage());
+        assertTrue(e.getMessage().contains("java.lang.String[][]"), e.getMessage());
     }
 
     @Test
