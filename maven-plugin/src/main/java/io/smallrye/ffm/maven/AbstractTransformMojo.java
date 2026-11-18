@@ -39,12 +39,13 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     private String artifactId;
 
     /**
-     * Skip writing the GraalVM native image metadata
-     * ({@code META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json})
-     * which registers the downcalls linked by the transformed classes.
+     * Write GraalVM native image metadata which registers the downcalls linked by the transformed classes.
+     * The file is {@code META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json}
+     * in the classes directory; native-image reads it along with every other metadata file on the class path.
+     * This is off by default.
      */
-    @Parameter(defaultValue = "false", property = "smallrye-ffm.skipNativeMetadata")
-    private boolean skipNativeMetadata;
+    @Parameter(defaultValue = "false", property = "smallrye.ffm.generateNativeMetadata")
+    private boolean generateNativeMetadata;
 
     /**
      * Construct a new instance.
@@ -65,11 +66,13 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
         getLog().info("Transforming classes in path: " + classes);
         NativeMetadata metadata = new NativeMetadata();
         int cnt = processPath(classes, metadata);
-        if (!skipNativeMetadata) {
+        if (generateNativeMetadata) {
             Path file = classes.resolve("META-INF").resolve("native-image").resolve(groupId).resolve(artifactId)
                     .resolve("smallrye-ffm").resolve("reachability-metadata.json");
             try {
                 metadata.write(file);
+            } catch (NativeMetadata.NotOursException e) {
+                throw new MojoFailureException(e.getMessage(), e);
             } catch (IOException e) {
                 throw new MojoFailureException("Failed to write " + file, e);
             }

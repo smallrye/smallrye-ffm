@@ -3,6 +3,8 @@ package io.smallrye.ffm.maven;
 import static java.lang.constant.ConstantDescs.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.constant.ClassDesc;
 import java.lang.constant.MethodTypeDesc;
@@ -12,6 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.apache.maven.plugin.MojoFailureException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -60,23 +63,68 @@ public final class NativeMetadataTest {
     @Test
     public void testDowncallsAreRegistered() throws Exception {
         writeNatives();
-        transform(false);
+        transform(true);
         assertEquals(EXPECTED, Files.readString(metadataFile()));
     }
 
     @Test
     public void testAlreadyTransformedClassesAreRegistered() throws Exception {
         writeNatives();
-        transform(false);
+        transform(true);
         Files.delete(metadataFile());
         // the classes are no longer native, as after an incremental build
-        transform(false);
+        transform(true);
         assertEquals(EXPECTED, Files.readString(metadataFile()));
     }
 
     @Test
-    public void testSkipNativeMetadata() throws Exception {
+    public void testNoMetadataByDefault() throws Exception {
         writeNatives();
+        transform(false);
+        assertFalse(Files.exists(metadataFile()));
+    }
+
+    @Test
+    public void testFileNotWrittenByThePluginIsKept() throws Exception {
+        writeNatives();
+        String foreign = "{\"reflection\": []}\n";
+        Files.createDirectories(metadataFile().getParent());
+        Files.writeString(metadataFile(), foreign);
+        MojoFailureException e = assertThrows(MojoFailureException.class, () -> transform(true));
+        assertTrue(e.getMessage().contains("was not written by smallrye-ffm-maven-plugin"), e.getMessage());
+        assertEquals(foreign, Files.readString(metadataFile()));
+    }
+
+    @Test
+    public void testFileNotWrittenByThePluginIsNotDeleted() throws Exception {
+        Files.write(dir.resolve("Plain.class"), ClassFile.of().build(ClassDesc.of("Plain"), zb -> {
+        }));
+        String foreign = "{\"reflection\": []}\n";
+        Files.createDirectories(metadataFile().getParent());
+        Files.writeString(metadataFile(), foreign);
+        assertThrows(MojoFailureException.class, () -> transform(true));
+        assertEquals(foreign, Files.readString(metadataFile()));
+    }
+
+    @Test
+    public void testOtherMetadataFilesAreUntouched() throws Exception {
+        writeNatives();
+        Path own = dir.resolve("META-INF/native-image/org.example/natives/reachability-metadata.json");
+        String foreign = "{\"reflection\": []}\n";
+        Files.createDirectories(own.getParent());
+        Files.writeString(own, foreign);
+        transform(true);
+        assertEquals(foreign, Files.readString(own));
+        assertEquals(EXPECTED, Files.readString(metadataFile()));
+    }
+
+    @Test
+    public void testOwnFileIsDeletedWithoutDowncalls() throws Exception {
+        writeNatives();
+        transform(true);
+        Files.delete(dir.resolve("org/example/Natives.class"));
+        Files.write(dir.resolve("Plain.class"), ClassFile.of().build(ClassDesc.of("Plain"), zb -> {
+        }));
         transform(true);
         assertFalse(Files.exists(metadataFile()));
     }
@@ -85,7 +133,7 @@ public final class NativeMetadataTest {
     public void testNoDowncallsNoFile() throws Exception {
         Files.write(dir.resolve("Plain.class"), ClassFile.of().build(ClassDesc.of("Plain"), zb -> {
         }));
-        transform(false);
+        transform(true);
         assertFalse(Files.exists(metadataFile()));
     }
 
@@ -101,12 +149,12 @@ public final class NativeMetadataTest {
         return dir.resolve("META-INF/native-image/org.example/natives/smallrye-ffm/reachability-metadata.json");
     }
 
-    private void transform(boolean skip) throws Exception {
+    private void transform(boolean generate) throws Exception {
         TransformMojo mojo = new TransformMojo();
         set(mojo, TransformMojo.class, "classesDirectory", dir.toFile());
         set(mojo, AbstractTransformMojo.class, "groupId", "org.example");
         set(mojo, AbstractTransformMojo.class, "artifactId", "natives");
-        set(mojo, AbstractTransformMojo.class, "skipNativeMetadata", skip);
+        set(mojo, AbstractTransformMojo.class, "generateNativeMetadata", generate);
         mojo.execute();
     }
 
