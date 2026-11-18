@@ -917,7 +917,8 @@ public final class Bootstraps {
             case 'u' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is unsigned byte
                 case 'B', 'c' -> inputConvOfU8(desc, offs, type, dsChar);
-                // downcall parameter is unsigned short (passed as int)
+                // downcall parameter is unsigned short: its layout is int (see layoutOf), and unlike the
+                // unsigned byte conversions, which already produce int, these produce char, so widen them
                 case 's', 'S' ->
                     toInt(inputConvOfU16(desc, offs, type, dsChar), staticMethod(Bootstraps.class, "c2i", "(C)I", false));
                 // downcall parameter is unsigned int

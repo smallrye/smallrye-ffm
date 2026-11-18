@@ -1,6 +1,10 @@
 package io.smallrye.ffm.test;
 
 import static io.smallrye.ffm.AsType.size_t;
+import static io.smallrye.ffm.AsType.stdc_unsigned_char;
+import static io.smallrye.ffm.AsType.stdc_unsigned_short;
+import static io.smallrye.ffm.AsType.u16;
+import static io.smallrye.ffm.AsType.u8;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.*;
 
@@ -65,13 +69,29 @@ public final class NarrowArgumentTest {
     }
 
     /**
-     * Test that a {@code char} argument, which is an unsigned 16-bit value passed as an {@code int}, is linked.
+     * Test that non-variadic unsigned 16-bit arguments are linked and passed correctly. Their layout is {@code int},
+     * so their conversion must produce an {@code int} whatever the Java parameter type is.
      */
     @Test
-    public void testCharParameter() {
+    public void testUnsignedShortParameter() {
         assumeTrue(NarrowArgumentTest.class.getModule().isNativeAccessEnabled());
         assertEquals(65, abs('A'));
         assertEquals(65535, abs('\uffff'));
+        assertEquals(0xfedc, absU16Short((short) 0xfedc));
+        assertEquals(0xfedc, absU16Int(0xfedc));
+        assertEquals(0xfedc, absU16Int(0x1fedc));
+        assertEquals(0xfedc, absU16Long(0xfedcL));
+    }
+
+    /**
+     * Test that non-variadic unsigned 8-bit arguments are passed correctly. Their layout is {@code int} too, and
+     * their conversions already produce an {@code int}.
+     */
+    @Test
+    public void testUnsignedByteParameter() {
+        assumeTrue(NarrowArgumentTest.class.getModule().isNativeAccessEnabled());
+        assertEquals(200, absByte((byte) 200));
+        assertEquals(200, absShort((short) 200));
     }
 
     private static String format(Function<MemorySegment, Integer> call) {
@@ -86,6 +106,21 @@ public final class NarrowArgumentTest {
 
     @Link
     private static native int abs(char value);
+
+    @Link(name = "abs")
+    private static native int absByte(@As(u8) byte value);
+
+    @Link(name = "abs")
+    private static native int absShort(@As(stdc_unsigned_char) short value);
+
+    @Link(name = "abs")
+    private static native int absU16Short(@As(u16) short value);
+
+    @Link(name = "abs")
+    private static native int absU16Int(@As(stdc_unsigned_short) int value);
+
+    @Link(name = "abs")
+    private static native int absU16Long(@As(u16) long value);
 
     @Link(name = "snprintf")
     private static native int snprintfBoolean(MemorySegment buf, @As(size_t) long size, String format,
