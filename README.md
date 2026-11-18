@@ -119,6 +119,18 @@ By default, this is the mapping of Java types to `AsType` constants:
 * `float` - `AsType.f32`
 * `double` - `AsType.f64`
 * `MemorySegment`, primitive arrays, and `String` - `AsType.ptr`
+* `String[]` - `AsType.ptr`, to an array of `char *` (see below)
+
+A `String[]` is passed as a native array of `char *` with one element per array element.
+Unless the parameter is annotated with `@Out` but not `@In`, each element is copied as a `NUL`-terminated string
+(in the `@AsCharset` charset, UTF-8 by default), or passed as `NULL` if it is `null`,
+and the array is followed by one more `NULL` element, so that it can also be passed to functions which expect
+a `NULL`-terminated array such as `argv`; a `null` array is passed as `NULL`.
+For `@Out` only, the native array is zero-filled for the function to fill in.
+Unless the parameter is annotated with `@In` but not `@Out`, each element is read back after the call as a `String`,
+or `null` for a `NULL` pointer.
+
+The plugin fails the build for a parameter or return type which it cannot map, such as `Object` or `List`.
 
 ### `Errno` support
 
