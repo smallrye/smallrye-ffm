@@ -1210,8 +1210,10 @@ public final class Bootstraps {
             case 'u' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is unsigned byte
                 case 'B', 'c' -> outputConvOfU8(desc, offs, type, dsChar);
-                // downcall parameter is unsigned short
-                case 's', 'S' -> outputConvOfU16(desc, offs, type, dsChar);
+                // downcall parameter is unsigned short: its layout is int (see layoutOf), and the unsigned short
+                // conversions take char, so narrow the value first
+                case 's', 'S' -> fromInt(staticMethod(Bootstraps.class, "i2c", "(I)C", false),
+                        outputConvOfU16(desc, offs, type, dsChar));
                 // downcall parameter is unsigned int
                 case 'I', 'i' -> outputConvOfU32(desc, offs, type, dsChar);
                 // downcall parameter is unsigned C long
@@ -1304,8 +1306,19 @@ public final class Bootstraps {
     }
 
     private static MethodHandle outputConvOfU8(final String desc, final int offs, final Class<?> type, final char dsChar) {
-        // bits 8-31 are zero, so we can sign-extend into any type safely
-        return outputConvOfU32(desc, offs, type, dsChar);
+        // the layout is int (see layoutOf); once bits 8-31 are cleared, we can sign-extend into any type safely
+        return fromInt(staticMethod(Bootstraps.class, "i2ub", "(I)I", false), outputConvOfS32(desc, offs, type, dsChar));
+    }
+
+    /**
+     * Narrow an {@code int} return value before converting it.
+     *
+     * @param narrow the narrowing conversion (must not be {@code null})
+     * @param conv the conversion of the narrowed value, or {@code null} if the return type already has the narrow type
+     * @return the combined conversion (not {@code null})
+     */
+    private static MethodHandle fromInt(final MethodHandle narrow, final MethodHandle conv) {
+        return conv == null ? narrow : MethodHandles.filterReturnValue(narrow, conv);
     }
 
     private static MethodHandle outputConvOfS16(final String desc, final int offs, final Class<?> type, final char dsChar) {
