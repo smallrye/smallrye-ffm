@@ -881,18 +881,19 @@ public final class Bootstraps {
             };
             case 'e' -> ValueLayout.JAVA_INT;
             case 's' -> switch (desc.charAt(offs + 1)) {
-                case 'B', 'c' -> ValueLayout.JAVA_BYTE;
-                case 'S', 's' -> ValueLayout.JAVA_SHORT;
+                // variadic arguments narrower than int are promoted to int
+                case 'B', 'c' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_BYTE;
+                case 'S', 's' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_SHORT;
                 case 'I', 'i' -> ValueLayout.JAVA_INT;
                 case 'l' -> stdc_long_layout;
                 case 'J' -> ValueLayout.JAVA_LONG;
                 case '*' -> intptr_layout;
                 default -> throw new IllegalArgumentException("Invalid native descriptor");
             };
-            case 'c' -> stdc_char_layout;
+            case 'c' -> variadic ? ValueLayout.JAVA_INT : stdc_char_layout;
             case 'w' -> stdc_wchar_layout;
             case '*' -> ValueLayout.ADDRESS;
-            case 'Z' -> ValueLayout.JAVA_BOOLEAN;
+            case 'Z' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_BOOLEAN;
             case 'F' -> variadic ? ValueLayout.JAVA_DOUBLE : ValueLayout.JAVA_FLOAT;
             case 'D' -> ValueLayout.JAVA_DOUBLE;
             default -> throw new IllegalArgumentException("Invalid native descriptor");
@@ -916,8 +917,10 @@ public final class Bootstraps {
             case 'u' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is unsigned byte
                 case 'B', 'c' -> inputConvOfU8(desc, offs, type, dsChar);
-                // downcall parameter is unsigned short
-                case 's', 'S' -> inputConvOfU16(desc, offs, type, dsChar);
+                // downcall parameter is unsigned short: its layout is int (see layoutOf), and unlike the
+                // unsigned byte conversions, which already produce int, these produce char, so widen them
+                case 's', 'S' ->
+                    toInt(inputConvOfU16(desc, offs, type, dsChar), staticMethod(Bootstraps.class, "c2i", "(C)I", false));
                 // downcall parameter is unsigned int
                 case 'I', 'i' -> inputConvOfU32(desc, offs, type, dsChar);
                 // downcall parameter is unsigned C long
@@ -932,9 +935,13 @@ public final class Bootstraps {
             case 'e' -> inputConvOfU32(desc, offs, type, dsChar);
             case 's' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is signed byte
-                case 'B', 'c' -> inputConvOfS8(desc, offs, type, dsChar);
+                case 'B', 'c' -> variadic
+                        ? toInt(inputConvOfS8(desc, offs, type, dsChar), staticMethod(Bootstraps.class, "b2i", "(B)I", false))
+                        : inputConvOfS8(desc, offs, type, dsChar);
                 // downcall parameter is signed short
-                case 's', 'S' -> inputConvOfS16(desc, offs, type, dsChar);
+                case 's', 'S' -> variadic
+                        ? toInt(inputConvOfS16(desc, offs, type, dsChar), staticMethod(Bootstraps.class, "s2i", "(S)I", false))
+                        : inputConvOfS16(desc, offs, type, dsChar);
                 // downcall parameter is signed int
                 case 'i', 'I' -> inputConvOfS32(desc, offs, type, dsChar);
                 // downcall parameter is signed C long
@@ -946,16 +953,34 @@ public final class Bootstraps {
                 case '*' -> cpu_is_64bit ? inputConvOfS64(desc, offs, type, dsChar) : inputConvOfS32(desc, offs, type, dsChar);
                 default -> throw new IllegalArgumentException("Invalid native descriptor");
             };
-            case 'c' -> stdc_char_is_signed ? inputConvOfS8(desc, offs, type, dsChar) : inputConvOfU8(desc, offs, type, dsChar);
+            case 'c' -> stdc_char_is_signed
+                    ? variadic
+                            ? toInt(inputConvOfS8(desc, offs, type, dsChar),
+                                    staticMethod(Bootstraps.class, "b2i", "(B)I", false))
+                            : inputConvOfS8(desc, offs, type, dsChar)
+                    : inputConvOfU8(desc, offs, type, dsChar);
             case 'w' -> stdc_wchar_is_signed
                     ? stdc_wchar_is_32bit ? inputConvOfS32(desc, offs, type, dsChar) : inputConvOfS16(desc, offs, type, dsChar)
                     : stdc_wchar_is_32bit ? inputConvOfU32(desc, offs, type, dsChar) : inputConvOfU16(desc, offs, type, dsChar);
             case '*' -> inputConvOfPtr(desc, offs, type);
-            case 'Z' -> inputConvOfBool(desc, offs, type, dsChar);
+            case 'Z' -> variadic
+                    ? toInt(inputConvOfBool(desc, offs, type, dsChar), staticMethod(Bootstraps.class, "z2i", "(Z)I", false))
+                    : inputConvOfBool(desc, offs, type, dsChar);
             case 'F' -> variadic ? inputConvOfF64(desc, offs, type, dsChar) : inputConvOfF32(desc, offs, type, dsChar);
             case 'D' -> inputConvOfF64(desc, offs, type, dsChar);
             default -> throw new IllegalArgumentException("Invalid native descriptor");
         };
+    }
+
+    /**
+     * Widen the result of a narrow conversion to {@code int}.
+     *
+     * @param conv the narrow conversion, or {@code null} if the parameter already has the narrow type
+     * @param widen the widening conversion (must not be {@code null})
+     * @return the combined conversion (not {@code null})
+     */
+    private static MethodHandle toInt(final MethodHandle conv, final MethodHandle widen) {
+        return conv == null ? widen : MethodHandles.filterReturnValue(conv, widen);
     }
 
     private static MethodHandle inputConvOfPtr(final String desc, final int offs, final Class<?> type) {
