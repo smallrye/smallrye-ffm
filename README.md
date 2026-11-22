@@ -54,14 +54,14 @@ Again, you should replace `LATEST` with the latest release version in order to e
 
 #### GraalVM native image
 
-A native image needs each downcall shape to be registered at build time.
+A GraalVM native image needs each downcall shape to be registered at build time.
 The plugin can write this registration for the downcalls linked by the transformed classes.
-It is off by default; to turn it on, set the `generateNativeMetadata` parameter in the plugin `configuration`,
-or the `smallrye.ffm.generateNativeMetadata` property, to `true`:
+It is off by default; to turn it on, set the `generateGraalVMNativeMetadata` parameter in the plugin `configuration`,
+or the `smallrye.ffm.generateGraalVMNativeMetadata` property, to `true`:
 
 ```xml
 <configuration>
-    <generateNativeMetadata>true</generateNativeMetadata>
+    <generateGraalVMNativeMetadata>true</generateGraalVMNativeMetadata>
 </configuration>
 ```
 

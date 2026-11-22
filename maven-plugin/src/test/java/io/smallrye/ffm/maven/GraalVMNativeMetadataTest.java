@@ -26,9 +26,9 @@ import io.smallrye.classfile.attribute.RuntimeInvisibleAnnotationsAttribute;
 import io.smallrye.classfile.attribute.RuntimeInvisibleParameterAnnotationsAttribute;
 
 /**
- * The transform goal registers the downcall shapes it links in a native image metadata file.
+ * The transform goal registers the downcall shapes it links in a GraalVM native metadata file.
  */
-public final class NativeMetadataTest {
+public final class GraalVMNativeMetadataTest {
     private static final ClassDesc CD_MemorySegment = ClassDesc.of("java.lang.foreign.MemorySegment");
     private static final ClassDesc CD_ErrnoConsumer = ClassDesc.of("io.smallrye.ffm.ErrnoConsumer");
     private static final ClassDesc CD_AsType = ClassDesc.of("io.smallrye.ffm.AsType");
@@ -57,7 +57,7 @@ public final class NativeMetadataTest {
     @TempDir
     Path dir;
 
-    public NativeMetadataTest() {
+    public GraalVMNativeMetadataTest() {
     }
 
     @Test
@@ -142,7 +142,7 @@ public final class NativeMetadataTest {
         assertEquals(List.of(
                 "{\"returnType\": \"jint\", \"parameterTypes\": [\"jbyte\", \"jbyte\"]}",
                 "{\"returnType\": \"jint\", \"parameterTypes\": [\"jint\", \"jbyte\"]}"),
-                NativeMetadata.entries("(csc)uc"));
+                GraalVMNativeMetadata.entries("(csc)uc"));
     }
 
     private Path metadataFile() {
@@ -154,7 +154,7 @@ public final class NativeMetadataTest {
         set(mojo, TransformMojo.class, "classesDirectory", dir.toFile());
         set(mojo, AbstractTransformMojo.class, "groupId", "org.example");
         set(mojo, AbstractTransformMojo.class, "artifactId", "natives");
-        set(mojo, AbstractTransformMojo.class, "generateNativeMetadata", generate);
+        set(mojo, AbstractTransformMojo.class, "generateGraalVMNativeMetadata", generate);
         mojo.execute();
     }
 

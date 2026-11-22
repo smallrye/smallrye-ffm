@@ -27,25 +27,25 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     private boolean skip;
 
     /**
-     * The project group ID, used in the path of the generated native image metadata.
+     * The project group ID, used in the path of the generated GraalVM native metadata.
      */
     @Parameter(defaultValue = "${project.groupId}", readonly = true)
     private String groupId;
 
     /**
-     * The project artifact ID, used in the path of the generated native image metadata.
+     * The project artifact ID, used in the path of the generated GraalVM native metadata.
      */
     @Parameter(defaultValue = "${project.artifactId}", readonly = true)
     private String artifactId;
 
     /**
-     * Write GraalVM native image metadata which registers the downcalls linked by the transformed classes.
+     * Write GraalVM native metadata which registers the downcalls linked by the transformed classes.
      * The file is {@code META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json}
      * in the classes directory; native-image reads it along with every other metadata file on the class path.
      * This is off by default.
      */
-    @Parameter(defaultValue = "false", property = "smallrye.ffm.generateNativeMetadata")
-    private boolean generateNativeMetadata;
+    @Parameter(defaultValue = "false", property = "smallrye.ffm.generateGraalVMNativeMetadata")
+    private boolean generateGraalVMNativeMetadata;
 
     /**
      * Construct a new instance.
@@ -64,20 +64,21 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
             return;
         }
         getLog().info("Transforming classes in path: " + classes);
-        NativeMetadata metadata = new NativeMetadata();
+        GraalVMNativeMetadata metadata = new GraalVMNativeMetadata();
         int cnt = processPath(classes, metadata);
-        if (generateNativeMetadata) {
+        if (generateGraalVMNativeMetadata) {
             Path file = classes.resolve("META-INF").resolve("native-image").resolve(groupId).resolve(artifactId)
                     .resolve("smallrye-ffm").resolve("reachability-metadata.json");
             try {
                 metadata.write(file);
-            } catch (NativeMetadata.NotOursException e) {
+            } catch (GraalVMNativeMetadata.NotOursException e) {
                 throw new MojoFailureException(e.getMessage(), e);
             } catch (IOException e) {
                 throw new MojoFailureException("Failed to write " + file, e);
             }
             if (!metadata.downcalls().isEmpty()) {
-                getLog().info("Registered " + metadata.downcalls().size() + " downcall shapes for native image in " + file);
+                getLog().info(
+                        "Registered " + metadata.downcalls().size() + " downcall shapes for GraalVM native image in " + file);
             }
         }
         switch (cnt) {
@@ -87,7 +88,7 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
         }
     }
 
-    private int processPath(final Path path, final NativeMetadata metadata) throws MojoFailureException {
+    private int processPath(final Path path, final GraalVMNativeMetadata metadata) throws MojoFailureException {
         int cnt = 0;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
             for (Path file : ds) {
