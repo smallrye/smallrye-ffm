@@ -1210,10 +1210,8 @@ public final class Bootstraps {
             case 'u' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is unsigned byte
                 case 'B', 'c' -> outputConvOfU8(desc, offs, type, dsChar);
-                // downcall parameter is unsigned short: its layout is int (see layoutOf), and the unsigned short
-                // conversions take char, so narrow the value first
-                case 's', 'S' -> fromInt(staticMethod(Bootstraps.class, "i2c", "(I)C", false),
-                        outputConvOfU16(desc, offs, type, dsChar));
+                // downcall parameter is unsigned short (its layout is int, as for unsigned byte)
+                case 's', 'S' -> outputConvOfU16(desc, offs, type, dsChar);
                 // downcall parameter is unsigned int
                 case 'I', 'i' -> outputConvOfU32(desc, offs, type, dsChar);
                 // downcall parameter is unsigned C long
@@ -1250,7 +1248,7 @@ public final class Bootstraps {
                     ? stdc_wchar_is_32bit ? outputConvOfS32(desc, offs, type, dsChar)
                             : outputConvOfS16(desc, offs, type, dsChar)
                     : stdc_wchar_is_32bit ? outputConvOfU32(desc, offs, type, dsChar)
-                            : outputConvOfU16(desc, offs, type, dsChar);
+                            : outputConvOfWchar16(desc, offs, type, dsChar);
             case '*' -> outputConvOfPtr(desc, offs, type);
             case 'Z' -> outputConvOfBool(desc, offs, type, dsChar);
             case 'F' -> outputConvOfF32(desc, offs, type, dsChar);
@@ -1305,20 +1303,28 @@ public final class Bootstraps {
         };
     }
 
+    // the layout is int (see layoutOf); bits 8-31 are not guaranteed to be zero, so each conversion clears them
     private static MethodHandle outputConvOfU8(final String desc, final int offs, final Class<?> type, final char dsChar) {
-        // the layout is int (see layoutOf); once bits 8-31 are cleared, we can sign-extend into any type safely
-        return fromInt(staticMethod(Bootstraps.class, "i2ub", "(I)I", false), outputConvOfS32(desc, offs, type, dsChar));
-    }
-
-    /**
-     * Narrow an {@code int} return value before converting it.
-     *
-     * @param narrow the narrowing conversion (must not be {@code null})
-     * @param conv the conversion of the narrowed value, or {@code null} if the return type already has the narrow type
-     * @return the combined conversion (not {@code null})
-     */
-    private static MethodHandle fromInt(final MethodHandle narrow, final MethodHandle conv) {
-        return conv == null ? narrow : MethodHandles.filterReturnValue(narrow, conv);
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "ub2z", "(I)Z", false);
+            case 'B' -> staticMethod(Bootstraps.class, "i2b", "(I)B", false);
+            case 'S' -> staticMethod(Bootstraps.class, "ub2s", "(I)S", false);
+            case 'C' -> staticMethod(Bootstraps.class, "ub2c", "(I)C", false);
+            case 'I' -> staticMethod(Bootstraps.class, "i2ub", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "ub2l", "(I)J", false);
+            case 'D' -> staticMethod(Bootstraps.class, "ub2d", "(I)D", false);
+            case 'F' -> staticMethod(Bootstraps.class, "ub2f", "(I)F", false);
+            case 'L' -> {
+                if (NativeIntValued.class.isAssignableFrom(type)) {
+                    yield MethodHandles.filterReturnValue(
+                            staticMethod(Bootstraps.class, "i2ub", "(I)I", false),
+                            staticMethod(type, "ofNativeValue", "(I)" + type.descriptorString(), false));
+                } else {
+                    throw invalidTypeForDescType(desc, offs, type);
+                }
+            }
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
     }
 
     private static MethodHandle outputConvOfS16(final String desc, final int offs, final Class<?> type, final char dsChar) {
@@ -1344,7 +1350,33 @@ public final class Bootstraps {
         };
     }
 
+    // the layout is int (see layoutOf); bits 16-31 are not guaranteed to be zero, so each conversion clears them
     private static MethodHandle outputConvOfU16(final String desc, final int offs, final Class<?> type, final char dsChar) {
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "us2z", "(I)Z", false);
+            case 'B' -> staticMethod(Bootstraps.class, "i2b", "(I)B", false);
+            case 'S' -> staticMethod(Bootstraps.class, "i2s", "(I)S", false);
+            case 'C' -> staticMethod(Bootstraps.class, "i2c", "(I)C", false);
+            case 'I' -> staticMethod(Bootstraps.class, "us2i", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "us2l", "(I)J", false);
+            case 'D' -> staticMethod(Bootstraps.class, "us2d", "(I)D", false);
+            case 'F' -> staticMethod(Bootstraps.class, "us2f", "(I)F", false);
+            case 'L' -> {
+                if (NativeIntValued.class.isAssignableFrom(type)) {
+                    yield MethodHandles.filterReturnValue(
+                            staticMethod(Bootstraps.class, "us2i", "(I)I", false),
+                            staticMethod(type, "ofNativeValue", "(I)" + type.descriptorString(), false));
+                } else {
+                    throw invalidTypeForDescType(desc, offs, type);
+                }
+            }
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
+    }
+
+    // a 16-bit wchar_t uses the canonical layout, which is char
+    private static MethodHandle outputConvOfWchar16(final String desc, final int offs, final Class<?> type,
+            final char dsChar) {
         return switch (dsChar) {
             case 'Z' -> staticMethod(Bootstraps.class, "c2z", "(C)Z", false);
             case 'B' -> staticMethod(Bootstraps.class, "c2b", "(C)B", false);
@@ -1807,6 +1839,65 @@ public final class Bootstraps {
         }
         // halve (keeping the low bit so rounding stays correct), convert, and double
         return (double) ((val >>> 1) | (val & 1)) * 2.0;
+    }
+
+    // unsigned byte (in an int) to...
+
+    @SuppressWarnings("unused")
+    private static boolean ub2z(int val) {
+        return (val & 0xff) != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static short ub2s(int val) {
+        return (short) (val & 0xff);
+    }
+
+    @SuppressWarnings("unused")
+    private static char ub2c(int val) {
+        return (char) (val & 0xff);
+    }
+
+    @SuppressWarnings("unused")
+    private static long ub2l(int val) {
+        return val & 0xff;
+    }
+
+    @SuppressWarnings("unused")
+    private static float ub2f(int val) {
+        return val & 0xff;
+    }
+
+    @SuppressWarnings("unused")
+    private static double ub2d(int val) {
+        return val & 0xff;
+    }
+
+    // unsigned short (in an int) to...
+
+    @SuppressWarnings("unused")
+    private static boolean us2z(int val) {
+        return (val & 0xffff) != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static int us2i(int val) {
+        return val & 0xffff;
+    }
+
+    @SuppressWarnings("unused")
+    private static long us2l(int val) {
+        return val & 0xffff;
+    }
+
+    @SuppressWarnings("unused")
+    private static float us2f(int val) {
+        return val & 0xffff;
+    }
+
+    @SuppressWarnings("unused")
+    private static double us2d(int val) {
+        return val & 0xffff;
     }
 
     // float to...

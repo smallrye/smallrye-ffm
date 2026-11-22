@@ -60,6 +60,11 @@ public final class ReturnTypesTest {
         assertEquals(0xfedc, absU16Int(0x1fedc));
         assertEquals(0xfedcL, absU16Long(0xfedc));
         assertEquals(0xfedcL, absU16Long(0x1fedc));
+        assertTrue(absU16Boolean(1));
+        assertFalse(absU16Boolean(0x10000));
+        assertEquals(65244.0f, absU16Float(0x1fedc));
+        assertEquals(65244.0, absU16Double(0x1fedc));
+        assertEquals(Errno.EDOM, absU16Errno(0x10000 + Errno.EDOM.nativeValue()));
     }
 
     /**
@@ -74,6 +79,12 @@ public final class ReturnTypesTest {
         assertEquals(200, absU8Int(0x1c8));
         assertEquals(200L, absU8Long(200));
         assertEquals(200L, absU8Long(0x1c8));
+        assertTrue(absU8Boolean(1));
+        assertFalse(absU8Boolean(0x100));
+        assertEquals((char) 200, absU8Char(0x1c8));
+        assertEquals(200.0f, absU8Float(0x1c8));
+        assertEquals(200.0, absU8Double(0x1c8));
+        assertEquals(Errno.EDOM, absU8Errno(0x100 + Errno.EDOM.nativeValue()));
     }
 
     /**
@@ -113,6 +124,18 @@ public final class ReturnTypesTest {
     private static native @As(u16) long absU16Long(int value);
 
     @Link(name = "abs")
+    private static native @As(u16) boolean absU16Boolean(int value);
+
+    @Link(name = "abs")
+    private static native @As(u16) float absU16Float(int value);
+
+    @Link(name = "abs")
+    private static native @As(u16) double absU16Double(int value);
+
+    @Link(name = "abs")
+    private static native @As(u16) Errno absU16Errno(int value);
+
+    @Link(name = "abs")
     private static native @As(u8) byte absU8Byte(int value);
 
     @Link(name = "abs")
@@ -123,6 +146,21 @@ public final class ReturnTypesTest {
 
     @Link(name = "abs")
     private static native @As(u8) long absU8Long(int value);
+
+    @Link(name = "abs")
+    private static native @As(u8) boolean absU8Boolean(int value);
+
+    @Link(name = "abs")
+    private static native @As(u8) char absU8Char(int value);
+
+    @Link(name = "abs")
+    private static native @As(u8) float absU8Float(int value);
+
+    @Link(name = "abs")
+    private static native @As(u8) double absU8Double(int value);
+
+    @Link(name = "abs")
+    private static native @As(u8) Errno absU8Errno(int value);
 
     @Link(name = "abs")
     private static native @As(s8) int absS8Int(int value);
