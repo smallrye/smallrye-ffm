@@ -52,6 +52,26 @@ To add the plugin using Maven, add the following to the `plugins` sub-element of
 
 Again, you should replace `LATEST` with the latest release version in order to ensure a stable build.
 
+#### GraalVM native image
+
+A GraalVM native image needs each downcall shape to be registered at build time.
+The plugin can write this registration for the downcalls linked by the transformed classes.
+It is off by default; to turn it on, set the `generateGraalVMNativeMetadata` parameter in the plugin `configuration`,
+or the `smallrye.ffm.generateGraalVMNativeMetadata` property, to `true`:
+
+```xml
+<configuration>
+    <generateGraalVMNativeMetadata>true</generateGraalVMNativeMetadata>
+</configuration>
+```
+
+The plugin then writes `META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json`
+in the classes directory, with only the `foreign` section.
+The file is in a directory of its own, so any other metadata (for reflection, resources, and so on, whether
+written by hand or by another tool) belongs in other files; native-image reads every `reachability-metadata.json`
+file below `META-INF/native-image` on the class path and combines them.
+The plugin never replaces or deletes a file at that location which it did not write; the build fails instead.
+
 ### Native function methods
 
 To declare a native function method, create a `native` method in your class

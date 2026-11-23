@@ -27,6 +27,27 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
     private boolean skip;
 
     /**
+     * The project group ID, used in the path of the generated GraalVM native metadata.
+     */
+    @Parameter(defaultValue = "${project.groupId}", readonly = true)
+    private String groupId;
+
+    /**
+     * The project artifact ID, used in the path of the generated GraalVM native metadata.
+     */
+    @Parameter(defaultValue = "${project.artifactId}", readonly = true)
+    private String artifactId;
+
+    /**
+     * Write GraalVM native metadata which registers the downcalls linked by the transformed classes.
+     * The file is {@code META-INF/native-image/<groupId>/<artifactId>/smallrye-ffm/reachability-metadata.json}
+     * in the classes directory; native-image reads it along with every other metadata file on the class path.
+     * This is off by default.
+     */
+    @Parameter(defaultValue = "false", property = "smallrye.ffm.generateGraalVMNativeMetadata")
+    private boolean generateGraalVMNativeMetadata;
+
+    /**
      * Construct a new instance.
      */
     AbstractTransformMojo() {
@@ -43,7 +64,23 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
             return;
         }
         getLog().info("Transforming classes in path: " + classes);
-        int cnt = processPath(classes);
+        GraalVMNativeMetadata metadata = new GraalVMNativeMetadata();
+        int cnt = processPath(classes, metadata);
+        if (generateGraalVMNativeMetadata) {
+            Path file = classes.resolve("META-INF").resolve("native-image").resolve(groupId).resolve(artifactId)
+                    .resolve("smallrye-ffm").resolve("reachability-metadata.json");
+            try {
+                metadata.write(file);
+            } catch (GraalVMNativeMetadata.NotOursException e) {
+                throw new MojoFailureException(e.getMessage(), e);
+            } catch (IOException e) {
+                throw new MojoFailureException("Failed to write " + file, e);
+            }
+            if (!metadata.downcalls().isEmpty()) {
+                getLog().info(
+                        "Registered " + metadata.downcalls().size() + " downcall shapes for GraalVM native image in " + file);
+            }
+        }
         switch (cnt) {
             case 0 -> getLog().info("No classes transformed");
             case 1 -> getLog().info("Transformed 1 class");
@@ -51,12 +88,12 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
         }
     }
 
-    private int processPath(final Path path) throws MojoFailureException {
+    private int processPath(final Path path, final GraalVMNativeMetadata metadata) throws MojoFailureException {
         int cnt = 0;
         try (DirectoryStream<Path> ds = Files.newDirectoryStream(path)) {
             for (Path file : ds) {
                 if (Files.isDirectory(file)) {
-                    cnt += processPath(file);
+                    cnt += processPath(file, metadata);
                 } else if (file.getFileName().toString().endsWith(".class")) {
                     ClassModel cm;
                     try {
@@ -74,11 +111,14 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
                     });
                     if (resHolder.res) {
                         cnt++;
+                        metadata.addClass(cf.parse(result));
                         try {
                             Files.write(file, result);
                         } catch (IOException e) {
                             throw new MojoFailureException("Failed to write " + file, e);
                         }
+                    } else {
+                        metadata.addClass(cm);
                     }
                 }
             }
