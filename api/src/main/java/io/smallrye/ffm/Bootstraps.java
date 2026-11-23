@@ -881,18 +881,19 @@ public final class Bootstraps {
             };
             case 'e' -> ValueLayout.JAVA_INT;
             case 's' -> switch (desc.charAt(offs + 1)) {
-                case 'B', 'c' -> ValueLayout.JAVA_BYTE;
-                case 'S', 's' -> ValueLayout.JAVA_SHORT;
+                // variadic arguments narrower than int are promoted to int
+                case 'B', 'c' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_BYTE;
+                case 'S', 's' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_SHORT;
                 case 'I', 'i' -> ValueLayout.JAVA_INT;
                 case 'l' -> stdc_long_layout;
                 case 'J' -> ValueLayout.JAVA_LONG;
                 case '*' -> intptr_layout;
                 default -> throw new IllegalArgumentException("Invalid native descriptor");
             };
-            case 'c' -> stdc_char_layout;
+            case 'c' -> variadic ? ValueLayout.JAVA_INT : stdc_char_layout;
             case 'w' -> stdc_wchar_layout;
             case '*' -> ValueLayout.ADDRESS;
-            case 'Z' -> ValueLayout.JAVA_BOOLEAN;
+            case 'Z' -> variadic ? ValueLayout.JAVA_INT : ValueLayout.JAVA_BOOLEAN;
             case 'F' -> variadic ? ValueLayout.JAVA_DOUBLE : ValueLayout.JAVA_FLOAT;
             case 'D' -> ValueLayout.JAVA_DOUBLE;
             default -> throw new IllegalArgumentException("Invalid native descriptor");
@@ -916,7 +917,7 @@ public final class Bootstraps {
             case 'u' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is unsigned byte
                 case 'B', 'c' -> inputConvOfU8(desc, offs, type, dsChar);
-                // downcall parameter is unsigned short
+                // downcall parameter is unsigned short (its layout is int, as for unsigned byte)
                 case 's', 'S' -> inputConvOfU16(desc, offs, type, dsChar);
                 // downcall parameter is unsigned int
                 case 'I', 'i' -> inputConvOfU32(desc, offs, type, dsChar);
@@ -932,9 +933,11 @@ public final class Bootstraps {
             case 'e' -> inputConvOfU32(desc, offs, type, dsChar);
             case 's' -> switch (desc.charAt(offs + 1)) {
                 // downcall parameter is signed byte
-                case 'B', 'c' -> inputConvOfS8(desc, offs, type, dsChar);
+                case 'B', 'c' ->
+                    variadic ? inputConvOfPromotedS8(desc, offs, type, dsChar) : inputConvOfS8(desc, offs, type, dsChar);
                 // downcall parameter is signed short
-                case 's', 'S' -> inputConvOfS16(desc, offs, type, dsChar);
+                case 's', 'S' ->
+                    variadic ? inputConvOfPromotedS16(desc, offs, type, dsChar) : inputConvOfS16(desc, offs, type, dsChar);
                 // downcall parameter is signed int
                 case 'i', 'I' -> inputConvOfS32(desc, offs, type, dsChar);
                 // downcall parameter is signed C long
@@ -946,12 +949,16 @@ public final class Bootstraps {
                 case '*' -> cpu_is_64bit ? inputConvOfS64(desc, offs, type, dsChar) : inputConvOfS32(desc, offs, type, dsChar);
                 default -> throw new IllegalArgumentException("Invalid native descriptor");
             };
-            case 'c' -> stdc_char_is_signed ? inputConvOfS8(desc, offs, type, dsChar) : inputConvOfU8(desc, offs, type, dsChar);
+            case 'c' -> stdc_char_is_signed
+                    ? variadic ? inputConvOfPromotedS8(desc, offs, type, dsChar) : inputConvOfS8(desc, offs, type, dsChar)
+                    : inputConvOfU8(desc, offs, type, dsChar);
             case 'w' -> stdc_wchar_is_signed
                     ? stdc_wchar_is_32bit ? inputConvOfS32(desc, offs, type, dsChar) : inputConvOfS16(desc, offs, type, dsChar)
-                    : stdc_wchar_is_32bit ? inputConvOfU32(desc, offs, type, dsChar) : inputConvOfU16(desc, offs, type, dsChar);
+                    : stdc_wchar_is_32bit ? inputConvOfU32(desc, offs, type, dsChar)
+                            : inputConvOfWchar16(desc, offs, type, dsChar);
             case '*' -> inputConvOfPtr(desc, offs, type);
-            case 'Z' -> inputConvOfBool(desc, offs, type, dsChar);
+            case 'Z' ->
+                variadic ? inputConvOfPromotedBool(desc, offs, type, dsChar) : inputConvOfBool(desc, offs, type, dsChar);
             case 'F' -> variadic ? inputConvOfF64(desc, offs, type, dsChar) : inputConvOfF32(desc, offs, type, dsChar);
             case 'D' -> inputConvOfF64(desc, offs, type, dsChar);
             default -> throw new IllegalArgumentException("Invalid native descriptor");
@@ -987,6 +994,22 @@ public final class Bootstraps {
         };
     }
 
+    // a variadic bool is promoted to int (0 or 1)
+    private static MethodHandle inputConvOfPromotedBool(final String desc, final int offs, final Class<?> type,
+            final char dsChar) {
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "z2i", "(Z)I", false);
+            case 'B' -> staticMethod(Bootstraps.class, "b2zi", "(B)I", false);
+            case 'S' -> staticMethod(Bootstraps.class, "s2zi", "(S)I", false);
+            case 'C' -> staticMethod(Bootstraps.class, "c2zi", "(C)I", false);
+            case 'I' -> staticMethod(Bootstraps.class, "i2zi", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "l2zi", "(J)I", false);
+            case 'D' -> staticMethod(Bootstraps.class, "d2zi", "(D)I", false);
+            case 'F' -> staticMethod(Bootstraps.class, "f2zi", "(F)I", false);
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
+    }
+
     private static MethodHandle inputConvOfS8(final String desc, final int offs, final Class<?> type, final char dsChar) {
         return switch (dsChar) {
             case 'Z' -> staticMethod(Bootstraps.class, "z2b", "(Z)B", false);
@@ -999,6 +1022,28 @@ public final class Bootstraps {
             case 'L' -> {
                 if (NativeIntValued.class.isAssignableFrom(type)) {
                     yield staticMethod(Bootstraps.class, "n2b", "(Lio/smallrye/ffm/NativeIntValued;)B", false);
+                } else {
+                    throw invalidTypeForDescType(desc, offs, type);
+                }
+            }
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
+    }
+
+    // a variadic signed byte is promoted to int (sign-extended)
+    private static MethodHandle inputConvOfPromotedS8(final String desc, final int offs, final Class<?> type,
+            final char dsChar) {
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "z2i", "(Z)I", false);
+            case 'B' -> staticMethod(Bootstraps.class, "b2i", "(B)I", false);
+            case 'S' -> staticMethod(Bootstraps.class, "s2sb", "(S)I", false);
+            case 'I' -> staticMethod(Bootstraps.class, "i2sb", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "l2sb", "(J)I", false);
+            case 'D' -> staticMethod(Bootstraps.class, "d2sb", "(D)I", false);
+            case 'F' -> staticMethod(Bootstraps.class, "f2sb", "(F)I", false);
+            case 'L' -> {
+                if (NativeIntValued.class.isAssignableFrom(type)) {
+                    yield staticMethod(Bootstraps.class, "n2sb", "(Lio/smallrye/ffm/NativeIntValued;)I", false);
                 } else {
                     throw invalidTypeForDescType(desc, offs, type);
                 }
@@ -1049,7 +1094,53 @@ public final class Bootstraps {
         };
     }
 
+    // a variadic signed short is promoted to int (sign-extended)
+    private static MethodHandle inputConvOfPromotedS16(final String desc, final int offs, final Class<?> type,
+            final char dsChar) {
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "z2i", "(Z)I", false);
+            case 'B' -> staticMethod(Bootstraps.class, "b2i", "(B)I", false);
+            case 'S' -> staticMethod(Bootstraps.class, "s2i", "(S)I", false);
+            case 'C' -> staticMethod(Bootstraps.class, "c2ss", "(C)I", false);
+            case 'I' -> staticMethod(Bootstraps.class, "i2ss", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "l2ss", "(J)I", false);
+            case 'D' -> staticMethod(Bootstraps.class, "d2ss", "(D)I", false);
+            case 'F' -> staticMethod(Bootstraps.class, "f2ss", "(F)I", false);
+            case 'L' -> {
+                if (NativeIntValued.class.isAssignableFrom(type)) {
+                    yield staticMethod(Bootstraps.class, "n2ss", "(Lio/smallrye/ffm/NativeIntValued;)I", false);
+                } else {
+                    throw invalidTypeForDescType(desc, offs, type);
+                }
+            }
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
+    }
+
+    // the layout is int (see layoutOf), as for unsigned byte
     private static MethodHandle inputConvOfU16(final String desc, final int offs, final Class<?> type, final char dsChar) {
+        return switch (dsChar) {
+            case 'Z' -> staticMethod(Bootstraps.class, "z2i", "(Z)I", false);
+            case 'S' -> staticMethod(Short.class, "toUnsignedInt", "(S)I", false);
+            case 'C' -> staticMethod(Bootstraps.class, "c2i", "(C)I", false);
+            case 'I' -> staticMethod(Bootstraps.class, "i2us", "(I)I", false);
+            case 'J' -> staticMethod(Bootstraps.class, "l2us", "(J)I", false);
+            case 'D' -> staticMethod(Bootstraps.class, "d2us", "(D)I", false);
+            case 'F' -> staticMethod(Bootstraps.class, "f2us", "(F)I", false);
+            case 'L' -> {
+                if (NativeIntValued.class.isAssignableFrom(type)) {
+                    yield staticMethod(Bootstraps.class, "n2us", "(Lio/smallrye/ffm/NativeIntValued;)I", false);
+                } else {
+                    throw invalidTypeForDescType(desc, offs, type);
+                }
+            }
+            default -> throw invalidTypeForDescType(desc, offs, type);
+        };
+    }
+
+    // a 16-bit wchar_t uses the canonical layout, which is char
+    private static MethodHandle inputConvOfWchar16(final String desc, final int offs, final Class<?> type,
+            final char dsChar) {
         return switch (dsChar) {
             case 'Z' -> staticMethod(Bootstraps.class, "z2c", "(Z)C", false);
             case 'S' -> staticMethod(Bootstraps.class, "s2c", "(S)C", false);
@@ -1472,6 +1563,11 @@ public final class Bootstraps {
     }
 
     @SuppressWarnings("unused")
+    private static int n2sb(NativeIntValued val) {
+        return (byte) val.nativeValue();
+    }
+
+    @SuppressWarnings("unused")
     private static short n2s(NativeIntValued val) {
         return (short) val.nativeValue();
     }
@@ -1479,6 +1575,16 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static char n2c(NativeIntValued val) {
         return (char) val.nativeValue();
+    }
+
+    @SuppressWarnings("unused")
+    private static int n2ss(NativeIntValued val) {
+        return (short) val.nativeValue();
+    }
+
+    @SuppressWarnings("unused")
+    private static int n2us(NativeIntValued val) {
+        return val.nativeValue() & 0xffff;
     }
 
     @SuppressWarnings("unused")
@@ -1591,6 +1697,11 @@ public final class Bootstraps {
         return val != 0;
     }
 
+    @SuppressWarnings("unused")
+    private static int b2zi(byte val) {
+        return z2i(b2z(val));
+    }
+
     // short to...
 
     @SuppressWarnings("unused")
@@ -1631,6 +1742,16 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static boolean s2z(short val) {
         return val != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static int s2sb(short val) {
+        return (byte) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int s2zi(short val) {
+        return z2i(s2z(val));
     }
 
     // char to...
@@ -1675,6 +1796,16 @@ public final class Bootstraps {
         return val != 0;
     }
 
+    @SuppressWarnings("unused")
+    private static int c2ss(char val) {
+        return (short) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int c2zi(char val) {
+        return z2i(c2z(val));
+    }
+
     // int to...
 
     @SuppressWarnings("unused")
@@ -1715,6 +1846,26 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static boolean i2z(int val) {
         return val != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static int i2sb(int val) {
+        return (byte) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int i2ss(int val) {
+        return (short) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int i2us(int val) {
+        return val & 0xffff;
+    }
+
+    @SuppressWarnings("unused")
+    private static int i2zi(int val) {
+        return z2i(i2z(val));
     }
 
     // long to...
@@ -1762,6 +1913,26 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static boolean l2z(long val) {
         return val != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static int l2sb(long val) {
+        return (byte) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int l2ss(long val) {
+        return (short) val;
+    }
+
+    @SuppressWarnings("unused")
+    private static int l2us(long val) {
+        return (int) (val & 0xffff);
+    }
+
+    @SuppressWarnings("unused")
+    private static int l2zi(long val) {
+        return z2i(l2z(val));
     }
 
     // unsigned int to...
@@ -1853,6 +2024,26 @@ public final class Bootstraps {
         return val != 0;
     }
 
+    @SuppressWarnings("unused")
+    private static int f2sb(float val) {
+        return f2b(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int f2ss(float val) {
+        return f2s(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int f2us(float val) {
+        return f2c(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int f2zi(float val) {
+        return z2i(f2z(val));
+    }
+
     // double to...
 
     @SuppressWarnings("unused")
@@ -1921,6 +2112,26 @@ public final class Bootstraps {
     @SuppressWarnings("unused")
     private static boolean d2z(double val) {
         return val != 0;
+    }
+
+    @SuppressWarnings("unused")
+    private static int d2sb(double val) {
+        return d2b(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int d2ss(double val) {
+        return d2s(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int d2us(double val) {
+        return d2c(val);
+    }
+
+    @SuppressWarnings("unused")
+    private static int d2zi(double val) {
+        return z2i(d2z(val));
     }
 
     private static final boolean fillErrno;
