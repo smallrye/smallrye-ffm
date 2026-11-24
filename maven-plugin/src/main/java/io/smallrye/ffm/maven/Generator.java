@@ -245,6 +245,11 @@ public final class Generator {
         MethodTypeDesc mtd = mm.methodTypeSymbol();
         int paramCnt = mtd.parameterCount();
 
+        if (!isSupportedReturnType(returnType)) {
+            throw new IllegalArgumentException("Native method " + methodName(cm, mm) + ": return type "
+                    + typeName(returnType) + " cannot be mapped to a C type");
+        }
+
         List<List<Annotation>> paListList = mm
                 .findAttribute(Attributes.runtimeInvisibleParameterAnnotations())
                 .map(RuntimeInvisibleParameterAnnotationsAttribute::parameterAnnotations)
@@ -419,6 +424,12 @@ public final class Generator {
                     }
                     steps.add(new SegmentArrayArgumentCopyStep(compilers, slot, in, out));
                 }
+                case "[Ljava/lang/String;" -> {
+                    if (compilers.allocatorStep == null) {
+                        compilers.allocatorStep = new OnDemandArenaStep();
+                    }
+                    steps.add(new StringArrayArgumentStep(compilers, slot, charset, in, out));
+                }
                 case "Ljava/lang/String;" -> {
                     if (compilers.allocatorStep == null || compilers.allocatorStep instanceof OnDemandArenaStep) {
                         compilers.allocatorStep = new AlwaysArenaStep();
@@ -451,7 +462,12 @@ public final class Generator {
                     compilers.wsaLastError = true;
                     steps.add(new WSALastErrorConsumerStep(compilers, slot));
                 }
-                default -> steps.add(new SimpleArgumentStep(mtd.parameterType(i), asType, slot));
+                default -> {
+                    if (!isSupportedSimpleType(mtd.parameterType(i))) {
+                        throw unsupportedParameter(cm, mm, i, "it cannot be mapped to a C type");
+                    }
+                    steps.add(new SimpleArgumentStep(mtd.parameterType(i), asType, slot));
+                }
             }
             slot += TypeKind.from(mtd.parameterType(i)).slotSize();
         }
@@ -548,6 +564,53 @@ public final class Generator {
         return List.copyOf(libs);
     }
 
+    /**
+     * {@return {@code true} if the type can be passed as a plain value}
+     * Primitive types are converted by the downcall bootstrap.
+     * Arrays and JDK types other than those handled explicitly cannot be mapped,
+     * while other reference types may implement {@code NativeIntValued}, which is checked at link time.
+     */
+    private static boolean isSupportedSimpleType(ClassDesc type) {
+        if (type.isPrimitive()) {
+            return true;
+        }
+        if (type.isArray()) {
+            return false;
+        }
+        String desc = type.descriptorString();
+        return !(desc.startsWith("Ljava/") || desc.startsWith("Ljavax/") || desc.startsWith("Ljdk/"));
+    }
+
+    private static boolean isSupportedReturnType(ClassDesc type) {
+        return switch (type.descriptorString()) {
+            case "Ljava/lang/foreign/MemorySegment;", "Ljava/lang/String;" -> true;
+            default -> isSupportedSimpleType(type);
+        };
+    }
+
+    private static IllegalArgumentException unsupportedParameter(ClassModel cm, MethodModel mm, int index, String reason) {
+        String name = mm.findAttribute(Attributes.methodParameters())
+                .flatMap(mpa -> index < mpa.parameters().size() ? mpa.parameters().get(index).name() : Optional.empty())
+                .map(n -> " (" + n.stringValue() + ")")
+                .orElse("");
+        return new IllegalArgumentException("Native method " + methodName(cm, mm) + ": parameter " + index + name
+                + " of type " + typeName(mm.methodTypeSymbol().parameterType(index)) + " is not supported: " + reason);
+    }
+
+    private static String methodName(ClassModel cm, MethodModel mm) {
+        return cm.thisClass().asInternalName().replace('/', '.') + "." + mm.methodName().stringValue();
+    }
+
+    private static String typeName(ClassDesc type) {
+        if (type.isArray()) {
+            return typeName(type.componentType()) + "[]";
+        } else if (type.isPrimitive() || type.packageName().isEmpty()) {
+            return type.displayName();
+        } else {
+            return type.packageName() + "." + type.displayName();
+        }
+    }
+
     private static IllegalArgumentException firstDispatchArgViolation() {
         return new IllegalArgumentException("First argument of @Dispatch must be the function pointer with no annotations");
     }
@@ -561,7 +624,9 @@ public final class Generator {
             case "J" -> "s64";
             case "S" -> "s16";
             case "Z" -> "stdc_bool";
-            case "Ljava/lang/foreign/MemorySegment;", "[B", "[C", "[D", "[F", "[I", "[J", "[S", "Ljava/lang/String;" -> "ptr";
+            case "Ljava/lang/foreign/MemorySegment;", "[B", "[C", "[D", "[F", "[I", "[J", "[S", "Ljava/lang/String;",
+                    "[Ljava/lang/String;" ->
+                "ptr";
             default -> "s32";
         };
     }
@@ -575,6 +640,7 @@ public final class Generator {
     private static final ClassDesc CD_Linker_Option = ClassDesc.of(Linker.Option.class.getName());
     private static final ClassDesc CD_MemoryLayout = ClassDesc.of(MemoryLayout.class.getName());
     private static final ClassDesc CD_MemorySegment = ClassDesc.of(MemorySegment.class.getName());
+    private static final ClassDesc CD_StandardCharsets = ClassDesc.of("java.nio.charset.StandardCharsets");
     private static final ClassDesc CD_SegmentAllocator = ClassDesc.of(SegmentAllocator.class.getName());
     private static final ClassDesc CD_StructLayout = ClassDesc.of(StructLayout.class.getName());
     private static final ClassDesc CD_SymbolLookup = ClassDesc.of(SymbolLookup.class.getName());
@@ -1479,6 +1545,83 @@ public final class Generator {
                     b1.aload(arraySlot);
                     b1.invokestatic(CD_Bootstraps, "copySegmentArrayFromNative",
                             MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_MemorySegmentArray));
+                }
+            });
+        }
+    }
+
+    /**
+     * Step that marshals a {@code String[]} parameter as a native array of {@code char *}.
+     * As input, each element is copied as a {@code NUL}-terminated string ({@code NULL} for {@code null}),
+     * and the array is followed by a {@code NULL} pointer; for {@code @Out} only, the array is zero-filled for the
+     * callee to fill in.
+     * As output, each element is read back as a string, or {@code null} for a {@code NULL} pointer.
+     */
+    static class StringArrayArgumentStep extends Step {
+        private final Compilers compilers;
+        private final int arraySlot;
+        private final String charset;
+        private final boolean in;
+        private final boolean out;
+
+        private StringArrayArgumentStep(final Compilers compilers, final int arraySlot, final String charset,
+                final boolean in, final boolean out) {
+            this.compilers = compilers;
+            this.arraySlot = arraySlot;
+            this.charset = charset;
+            this.in = in;
+            this.out = out;
+        }
+
+        void addParamDesc(final List<Step> steps, final int index, final StringBuilder sb) {
+            sb.append('*');
+            super.addParamDesc(steps, index, sb);
+        }
+
+        void addDowncallArgsDescs(final List<Step> steps, final int index, final List<ClassDesc> descs) {
+            descs.add(CD_MemorySegment);
+            super.addDowncallArgsDescs(steps, index, descs);
+        }
+
+        private void loadCharset(final CodeBuilder b) {
+            if (charset == null) {
+                b.getstatic(CD_StandardCharsets, "UTF_8", CD_Charset);
+            } else {
+                b.loadConstant(DynamicConstantDesc.ofNamed(CD_Bootstraps_charset, charset, CD_Charset));
+            }
+        }
+
+        void call(final CodeBuilder b0, final List<Step> steps, final int index) {
+            b0.block(b1 -> {
+                compilers.allocatorStep.loadAllocator(b1);
+                if (in) {
+                    // Bootstraps.copyStringArrayToNative(allocator, array, charset)
+                    b1.aload(arraySlot);
+                    loadCharset(b1);
+                    b1.invokestatic(CD_Bootstraps, "copyStringArrayToNative",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_SegmentAllocator, CD_String.arrayType(), CD_Charset));
+                } else {
+                    // out-only: allocator.allocate(ADDRESS, array.length) (zero-filled, so unset elements are NULL)
+                    b1.getstatic(CD_ValueLayout, "ADDRESS", CD_AddressLayout);
+                    b1.aload(arraySlot);
+                    b1.arraylength();
+                    b1.i2l();
+                    b1.invokeinterface(CD_SegmentAllocator, "allocate",
+                            MethodTypeDesc.of(CD_MemorySegment, CD_MemoryLayout, CD_long));
+                }
+                int segmentSlot = b1.allocateLocal(TypeKind.REFERENCE);
+                b1.localVariable(segmentSlot, "segment" + arraySlot, CD_MemorySegment, b1.newBoundLabel(), b1.endLabel());
+                b1.dup();
+                b1.astore(segmentSlot);
+                // make the call
+                super.call(b1, steps, index);
+                if (out) {
+                    // Bootstraps.copyStringArrayFromNative(segment, array, charset)
+                    b1.aload(segmentSlot);
+                    b1.aload(arraySlot);
+                    loadCharset(b1);
+                    b1.invokestatic(CD_Bootstraps, "copyStringArrayFromNative",
+                            MethodTypeDesc.of(CD_void, CD_MemorySegment, CD_String.arrayType(), CD_Charset));
                 }
             });
         }

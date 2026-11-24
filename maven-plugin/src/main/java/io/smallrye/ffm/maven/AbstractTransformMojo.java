@@ -104,11 +104,16 @@ public abstract class AbstractTransformMojo extends AbstractMojo {
                     var resHolder = new Object() {
                         boolean res;
                     };
-                    byte[] result = cf.transformClass(cm, (zb, ce) -> {
-                        if (Generator.processElement(zb, cm, ce)) {
-                            resHolder.res = true;
-                        }
-                    });
+                    byte[] result;
+                    try {
+                        result = cf.transformClass(cm, (zb, ce) -> {
+                            if (Generator.processElement(zb, cm, ce)) {
+                                resHolder.res = true;
+                            }
+                        });
+                    } catch (IllegalArgumentException e) {
+                        throw new MojoFailureException("Failed to transform " + file + ": " + e.getMessage(), e);
+                    }
                     if (resHolder.res) {
                         cnt++;
                         metadata.addClass(cf.parse(result));
